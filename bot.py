@@ -1,121 +1,207 @@
 #!/usr/bin/env python3
-# robux_town_bot.py — Auto-Order Bot (discord.py 2.6.4)
-# Fixed panel (only LOGO & BANNER editable). Payment methods:
-# - Eneba (select a saved link)
-# - G2A (buyer enters gift card code in a modal)
-# - Crypto (shows BTC/LTC/ETH/USDT wallets set via /setbtc /setltc /seteth /setusdt)
-# - Giftcard (generic code entry via modal)
-#
-# Env:
-#   BOT_TOKEN (required)
-#   DB_PATH   (optional, default: robux_autoorder.db)
+# Robux Town / Robux World — Auto Order Bot + Auto Fake Vouch Poster
+# See header of this file for feature list.
 
 import os
 import sqlite3
-from typing import Optional, List, Dict
+import asyncio
+import random
+import json
+from typing import Optional, Literal, List, Dict
 from datetime import datetime, timezone
 
 import discord
 from discord.ext import commands
 from discord import app_commands
 
-# ====== CONFIG ======
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise SystemExit("Missing BOT_TOKEN environment variable.")
-DB_PATH = os.getenv("DB_PATH", "robux_autoorder.db")
+    raise SystemExit("Missing BOT_TOKEN env var")
 
-PAYMENT_TYPES = ("eneba",)  # /addlink is ONLY for eneba now
-STAFF_ROLE_ID = 1291897728061931520
-DEFAULT_ROBUX_LOGO_URL = (
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/Robux_2019_Logo_white.svg/1883px-Robux_2019_Logo_white.svg.png"
-)
+DB_PATH = os.getenv("DB_PATH", "/data/robux_autoorder.db")
 
-# ====== INTENTS ======
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True  # enable in Dev Portal → Bot → Privileged Gateway Intents
+PAYMENT_TYPES = ("eneba", "g2a", "crypto", "giftcard")
 
-# ====== BOT CORE ======
-class RTBot(commands.Bot):
+PRESET_LINKS = {
+    "eneba": [
+        "https://www.eneba.com/rewarble-rewarble-visa-5-usd-voucher-global",
+        "https://www.eneba.com/rewarble-rewarble-visa-10-usd-voucher-global",
+        "https://www.eneba.com/rewarble-rewarble-visa-15-usd-voucher-global",
+    ],
+    "g2a": [
+        "https://www.g2a.com/rewarble-visa-gift-card-5-usd-by-rewarble-key-global-i10000502992002",
+        "https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewarble-key-global-i10000502992001",
+        "https://www.g2a.com/rewarble-visa-gift-card-15-usd-by-rewarble-key-global-i10000502992012",
+    ],
+}
+
+def _default_vouch_emojis():
+    return {
+        "check": "✅",
+        "user_lbl": "👤 User",
+        "user_val": "🔒 Hidden",
+        "pay_lbl": ":PAYMENT_SUPPORT: Payment Method",
+        "pay_val": ":CreditCard: Credit/Debit Card",
+        "robux_lbl": ":Robux~1: Robux Purchased",
+        "usd_lbl": "💶 USD Spent",
+        "rating_lbl": "⭐ Rating",
+        "order_lbl": "🧾 Order ID",
+    }
+
+INTENTS = discord.Intents.default()
+INTENTS.members = True
+INTENTS.message_content = True
+
+
+class Bot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix="!", intents=INTENTS)
         self.db: Optional[sqlite3.Connection] = None
-
-    async def setup_hook(self):
-        await self._init_db()
-        await self.tree.sync()
-        print("[SYNC] Slash commands synced.")
+        self.vouch_next: Dict[int, float] = {}
+        self.vouch_task: Optional[asyncio.Task] = None
 
     async def _init_db(self):
+        os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
         self.db = sqlite3.connect(DB_PATH)
         self.db.row_factory = sqlite3.Row
         cur = self.db.cursor()
-        cur.executescript("""
-        PRAGMA journal_mode=WAL;
+        cur.executescript(
+            """
+            PRAGMA journal_mode=WAL;
 
-        CREATE TABLE IF NOT EXISTS links (
-          id         INTEGER PRIMARY KEY AUTOINCREMENT,
-          guild_id   INTEGER NOT NULL,
-          type       TEXT    NOT NULL,
-          url        TEXT    NOT NULL,
-          created_at TEXT    NOT NULL
-        );
+            CREATE TABLE IF NOT EXISTS links (
+              id        INTEGER PRIMARY KEY AUTOINCREMENT,
+              guild_id  INTEGER NOT NULL,
+              type      TEXT    NOT NULL,
+              url       TEXT    NOT NULL,
+              created_at TEXT   NOT NULL
+            );
 
-        -- Branding: ONLY logo & banner are editable.
-        CREATE TABLE IF NOT EXISTS branding (
-          guild_id    INTEGER PRIMARY KEY,
-          logo_url    TEXT,
-          banner_url  TEXT
-        );
+            CREATE TABLE IF NOT EXISTS branding (
+              guild_id        INTEGER PRIMARY KEY,
+              logo_url        TEXT,
+              banner_url      TEXT,
+              note_text       TEXT,
+              log_channel     INTEGER,
+              vouch_channel   INTEGER,
+              vouch_auto_en   INTEGER,
+              vouch_min_h     INTEGER,
+              vouch_max_h     INTEGER,
+              vouch_emojis    TEXT
+            );
 
-        -- Crypto wallets per guild
-        CREATE TABLE IF NOT EXISTS crypto_wallets (
-          guild_id INTEGER PRIMARY KEY,
-          btc TEXT, ltc TEXT, eth TEXT, usdt TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS orders (
-          id         INTEGER PRIMARY KEY AUTOINCREMENT,
-          guild_id   INTEGER NOT NULL,
-          user_id    INTEGER NOT NULL,
-          amount     INTEGER NOT NULL,
-          pay_type   TEXT    NOT NULL,
-          link_used  TEXT,
-          created_at TEXT    NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_links_guild  ON links(guild_id);
-        CREATE INDEX IF NOT EXISTS idx_orders_guild ON orders(guild_id);
-        """)
+            CREATE TABLE IF NOT EXISTS orders (
+              id        INTEGER PRIMARY KEY AUTOINCREMENT,
+              guild_id  INTEGER NOT NULL,
+              user_id   INTEGER NOT NULL,
+              amount    INTEGER NOT NULL,
+              pay_type  TEXT    NOT NULL,
+              link_used TEXT,
+              created_at TEXT   NOT NULL
+            );
+            """
+        )
         self.db.commit()
         print(f"[DB] Ready at {DB_PATH}")
 
-    # ----- DB helpers -----
-    def save_branding(self, guild_id: int, logo: Optional[str], banner: Optional[str]):
+    def save_branding(
+        self,
+        guild_id: int,
+        logo: Optional[str],
+        banner: Optional[str],
+        note: Optional[str],
+        log_channel: Optional[int] = None,
+        vouch_channel: Optional[int] = None,
+    ):
         cur = self.db.cursor()
-        cur.execute("INSERT OR IGNORE INTO branding(guild_id, logo_url, banner_url) VALUES (?, NULL, NULL)", (guild_id,))
-        if logo   is not None: cur.execute("UPDATE branding SET logo_url=?   WHERE guild_id=?", (logo,   guild_id))
-        if banner is not None: cur.execute("UPDATE branding SET banner_url=? WHERE guild_id=?", (banner, guild_id))
+        cur.execute("INSERT OR IGNORE INTO branding(guild_id) VALUES (?)", (guild_id,))
+        if logo is not None:
+            cur.execute("UPDATE branding SET logo_url=? WHERE guild_id=?", (logo, guild_id))
+        if banner is not None:
+            cur.execute("UPDATE branding SET banner_url=? WHERE guild_id=?", (banner, guild_id))
+        if note is not None:
+            cur.execute("UPDATE branding SET note_text=? WHERE guild_id=?", (note, guild_id))
+        if log_channel is not None:
+            cur.execute("UPDATE branding SET log_channel=? WHERE guild_id=?", (log_channel, guild_id))
+        if vouch_channel is not None:
+            cur.execute("UPDATE branding SET vouch_channel=? WHERE guild_id=?", (vouch_channel, guild_id))
         self.db.commit()
 
-    def load_branding(self, guild_id: int) -> Dict[str, Optional[str]]:
+    def load_branding(self, guild_id: int) -> dict:
         cur = self.db.cursor()
-        cur.execute("SELECT logo_url,banner_url FROM branding WHERE guild_id=?", (guild_id,))
+        cur.execute(
+            """
+            SELECT logo_url,banner_url,note_text,log_channel,
+                   vouch_channel,vouch_auto_en,vouch_min_h,vouch_max_h,vouch_emojis
+            FROM branding WHERE guild_id=?
+            """,
+            (guild_id,),
+        )
+        r = cur.fetchone()
+        if not r:
+            return {
+                "logo_url": None,
+                "banner_url": None,
+                "note_text": None,
+                "log_channel": None,
+                "vouch_channel": None,
+                "vouch_auto_en": 0,
+                "vouch_min_h": 10,
+                "vouch_max_h": 30,
+                "vouch_emojis": json.dumps(_default_vouch_emojis(), ensure_ascii=False),
+            }
+        return {
+            "logo_url": r["logo_url"],
+            "banner_url": r["banner_url"],
+            "note_text": r["note_text"],
+            "log_channel": r["log_channel"],
+            "vouch_channel": r["vouch_channel"],
+            "vouch_auto_en": r["vouch_auto_en"] or 0,
+            "vouch_min_h": r["vouch_min_h"] or 10,
+            "vouch_max_h": r["vouch_max_h"] or 30,
+            "vouch_emojis": r["vouch_emojis"] or json.dumps(_default_vouch_emojis(), ensure_ascii=False),
+        }
+
+    def set_vouch_auto(self, guild_id: int, enabled: bool, min_h: int, max_h: int):
+        min_h = max(1, int(min_h))
+        max_h = max(min_h, int(max_h))
+        cur = self.db.cursor()
+        cur.execute("INSERT OR IGNORE INTO branding(guild_id) VALUES (?)", (guild_id,))
+        cur.execute(
+            "UPDATE branding SET vouch_auto_en=?, vouch_min_h=?, vouch_max_h=? WHERE guild_id=?",
+            (1 if enabled else 0, min_h, max_h, guild_id),
+        )
+        self.db.commit()
+        self.vouch_next[guild_id] = 0
+
+    def set_vouch_channel(self, guild_id: int, ch_id: Optional[int]):
+        cur = self.db.cursor()
+        cur.execute("INSERT OR IGNORE INTO branding(guild_id) VALUES (?)", (guild_id,))
+        cur.execute("UPDATE branding SET vouch_channel=? WHERE guild_id=?", (ch_id, guild_id))
+        self.db.commit()
+
+    def set_vouch_emojis(self, guild_id: int, updates: dict):
+        cur = self.db.cursor()
+        cur.execute("INSERT OR IGNORE INTO branding(guild_id) VALUES (?)", (guild_id,))
+        cur.execute("SELECT vouch_emojis FROM branding WHERE guild_id=?", (guild_id,))
         row = cur.fetchone()
-        if not row:
-            return {"logo_url": DEFAULT_ROBUX_LOGO_URL, "banner_url": None}
-        data = dict(row)
-        if not data.get("logo_url"):
-            data["logo_url"] = DEFAULT_ROBUX_LOGO_URL
-        return data
+        base = _default_vouch_emojis()
+        if row and row["vouch_emojis"]:
+            try:
+                base.update(json.loads(row["vouch_emojis"]))
+            except Exception:
+                pass
+        base.update({k: v for k, v in updates.items() if v is not None})
+        merged = json.dumps(base, ensure_ascii=False)
+        cur.execute("UPDATE branding SET vouch_emojis=? WHERE guild_id=?", (merged, guild_id))
+        self.db.commit()
 
     def add_link(self, guild_id: int, t: str, url: str) -> int:
         if t not in PAYMENT_TYPES:
-            raise ValueError("invalid type")
+            raise ValueError("Invalid type")
         cur = self.db.cursor()
         cur.execute(
-            "INSERT INTO links(guild_id, type, url, created_at) VALUES(?, ?, ?, ?)",
+            "INSERT INTO links (guild_id, type, url, created_at) VALUES (?, ?, ?, ?)",
             (guild_id, t, url, datetime.now(timezone.utc).isoformat()),
         )
         self.db.commit()
@@ -130,288 +216,197 @@ class RTBot(commands.Bot):
     def list_links_grouped(self, guild_id: int) -> Dict[str, List[dict]]:
         cur = self.db.cursor()
         cur.execute("SELECT id, type, url FROM links WHERE guild_id=? ORDER BY type, id", (guild_id,))
-        grouped: Dict[str, List[dict]] = {"eneba": []}
-        for r in cur.fetchall():
-            grouped.setdefault(r["type"], []).append({"id": r["id"], "url": r["url"]})
+        grouped = {t: [] for t in PAYMENT_TYPES}
+        for row in cur.fetchall():
+            grouped[row["type"]].append({"id": row["id"], "url": row["url"]})
         return grouped
 
-    def links_for_type(self, guild_id: int, t: str) -> List[dict]:
+    def get_links_by_type(self, guild_id: int, t: str) -> List[dict]:
         cur = self.db.cursor()
         cur.execute("SELECT id, url FROM links WHERE guild_id=? AND type=? ORDER BY id", (guild_id, t))
-        return [{"id": r["id"], "url": r["url"]} for r in cur.fetchall()]
-
-    def set_wallet(self, guild_id: int, kind: str, value: Optional[str]):
-        assert kind in ("btc","ltc","eth","usdt")
-        cur = self.db.cursor()
-        cur.execute("INSERT OR IGNORE INTO crypto_wallets(guild_id) VALUES (?)", (guild_id,))
-        cur.execute(f"UPDATE crypto_wallets SET {kind}=? WHERE guild_id=?", (value, guild_id))
-        self.db.commit()
-
-    def get_wallets(self, guild_id: int) -> Dict[str, Optional[str]]:
-        cur = self.db.cursor()
-        cur.execute("SELECT btc,ltc,eth,usdt FROM crypto_wallets WHERE guild_id=?", (guild_id,))
-        row = cur.fetchone()
-        if not row:
-            return {"btc": None, "ltc": None, "eth": None, "usdt": None}
-        return dict(row)
+        rows = cur.fetchall()
+        if not rows and t in PRESET_LINKS:
+            return [{"id": -i - 1, "url": url} for i, url in enumerate(PRESET_LINKS[t])]
+        return [{"id": r["id"], "url": r["url"]} for r in rows]
 
     def log_order(self, guild_id: int, user_id: int, amount: int, pay_type: str, link_used: str):
         cur = self.db.cursor()
         cur.execute(
-            "INSERT INTO orders(guild_id, user_id, amount, pay_type, link_used, created_at) VALUES(?, ?, ?, ?, ?, ?)",
+            "INSERT INTO orders (guild_id, user_id, amount, pay_type, link_used, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (guild_id, user_id, amount, pay_type, link_used, datetime.now(timezone.utc).isoformat()),
         )
         self.db.commit()
 
-bot = RTBot()
+    async def send_log_embed(self, guild_id: int, embed: discord.Embed):
+        cfg = self.load_branding(guild_id)
+        ch_id = cfg.get("log_channel")
+        if not ch_id:
+            return
+        try:
+            ch = self.get_channel(ch_id) or await self.fetch_channel(ch_id)
+            await ch.send(embed=embed)
+        except Exception as e:
+            print(f"[LOGGING] Failed to send to channel {ch_id}: {e}")
 
-# ====== FIXED TEXT / EMBEDS ======
-SAFETY_NOTE = (
-    "Please keep **all** deal conversation inside this ticket.\n"
-    "Our staff will **never** DM you for payments or codes."
-)
+    async def _auto_vouch_loop(self):
+        await self.wait_until_ready()
+        print("[VOUCH] Background loop started")
+        while not self.is_closed():
+            now = datetime.now(timezone.utc).timestamp()
+            for guild in list(self.guilds):
+                try:
+                    cfg = self.load_branding(guild.id)
+                    if not cfg.get("vouch_auto_en"):
+                        continue
+                    vch = cfg.get("vouch_channel")
+                    if not vch:
+                        continue
+                    next_ts = self.vouch_next.get(guild.id, 0)
+                    if now >= next_ts:
+                        await self._post_one_fake_vouch(guild)
+                        wait_h = random.randint(int(cfg["vouch_min_h"]), int(cfg["vouch_max_h"]))
+                        self.vouch_next[guild.id] = now + wait_h * 3600
+                except Exception as e:
+                    print(f"[VOUCH] error: {e}")
+            await asyncio.sleep(300)
 
-def mk_panel_embed(branding: Dict[str, Optional[str]], guild: discord.Guild) -> discord.Embed:
-    title = "Automated Purchase"
-    desc = (
-        "This bot is designed to streamline the process of purchasing and distributing **Robux**.\n\n"
-        "**Instant Robux Delivery:**\n"
-        "• Receive your Robux within moments of purchase.\n\n"
-        "**Fully Automated Payments:**\n"
-        "• Experience seamless transactions with our fully automated payment system.\n\n"
-        "**Transaction Security:**\n"
-        "• Safe and secure processing inside ticket threads only.\n\n"
-        "**Diverse Payment Options:**\n"
-        "• Eneba, G2A, Crypto & Giftcards."
+    async def _post_one_fake_vouch(self, guild: discord.Guild):
+        cfg = self.load_branding(guild.id)
+        ch_id = cfg.get("vouch_channel")
+        if not ch_id:
+            return
+        channel = self.get_channel(ch_id) or await self.fetch_channel(ch_id)
+
+        usd = round(random.uniform(5.0, 119.0), 2)
+        robux = int(usd) * 1000
+        stars = random.choices([5, 4, 3, 2, 1], weights=[60, 25, 10, 4, 1], k=1)[0]
+        order_id = str(random.randrange(10**15, 10**18))
+
+        emj = json.loads(cfg["vouch_emojis"] or json.dumps(_default_vouch_emojis(), ensure_ascii=False))
+        check = emj.get("check", "✅")
+        user_lbl = emj.get("user_lbl", "👤 User")
+        user_val = emj.get("user_val", "🔒 Hidden")
+        pay_lbl = emj.get("pay_lbl", ":PAYMENT_SUPPORT: Payment Method")
+        pay_val = emj.get("pay_val", ":CreditCard: Credit/Debit Card")
+        robux_lbl = emj.get("robux_lbl", ":Robux~1: Robux Purchased")
+        usd_lbl = emj.get("usd_lbl", "💶 USD Spent")
+        rating_lbl = emj.get("rating_lbl", "⭐ Rating")
+        order_lbl = emj.get("order_lbl", "🧾 Order ID")
+
+        e = discord.Embed(color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
+        e.title = f"{check} New Completed Order"
+        e.add_field(name=user_lbl, value=user_val, inline=True)
+        e.add_field(name=pay_lbl, value=pay_val, inline=True)
+        e.add_field(name=robux_lbl, value=f"{robux:,} Robux", inline=False)
+        e.add_field(name=usd_lbl, value=f"${usd:.2f}", inline=True)
+        stars_text = "★" * stars + "☆" * (5 - stars) + f" ({stars}/5)"
+        e.add_field(name=rating_lbl, value=stars_text, inline=True)
+        e.add_field(name=order_lbl, value=order_id, inline=False)
+        try:
+            await channel.send(embed=e)
+            print(f"[VOUCH] Posted fake vouch in {guild.name}#{channel.id}")
+        except Exception as ex:
+            print(f"[VOUCH] Failed to post in {guild.id} {channel.id}: {ex}")
+
+    async def setup_hook(self):
+        await self._init_db()
+        await self.tree.sync()
+        print("[SYNC] Slash commands synced.")
+        if self.vouch_task is None:
+            self.vouch_task = asyncio.create_task(self._auto_vouch_loop())
+
+    async def on_guild_join(self, guild: discord.Guild):
+        self.vouch_next[guild.id] = 0
+
+    async def on_ready(self):
+        print(f"[READY] Logged in as {self.user} (ID: {self.user.id})")
+
+
+bot = Bot()
+
+# ---------- UI / Wizard pieces ----------
+def header_embed(branding: dict) -> discord.Embed:
+    em = discord.Embed(
+        title="🛒 Automated Purchase",
+        description=(
+            "This bot streamlines buying **Robux**.\n"
+            "• **Instant Delivery** — as soon as payment is confirmed\n"
+            "• **Secure** — all deals handled in-thread by staff\n"
+            "• **Multiple Payment Options** — Crypto, Eneba, G2A, Giftcards\n"
+        ),
+        color=discord.Color.blurple(),
     )
-
-    e = discord.Embed(title=title, description=desc, color=discord.Color.from_str("#2b6cff"))
-    e.set_footer(text=f"{guild.name} • Powered by Robux Town")
-    e.timestamp = datetime.now(timezone.utc)
-    e.set_thumbnail(url=branding.get("logo_url") or DEFAULT_ROBUX_LOGO_URL)
+    if branding.get("logo_url"):
+        em.set_thumbnail(url=branding["logo_url"])
     if branding.get("banner_url"):
-        e.set_image(url=branding["banner_url"])
-    return e
+        em.set_image(url=branding["banner_url"])
+    return em
 
-def mk_note_embed() -> discord.Embed:
-    e = discord.Embed(title="⚠️ Safety Note", description=SAFETY_NOTE, color=discord.Color.from_str("#ffb200"))
-    e.set_footer(text="Stay safe — trades only inside tickets")
-    e.timestamp = datetime.now(timezone.utc)
-    return e
 
 def step1_embed() -> discord.Embed:
     return discord.Embed(
-        title="Start Purchase (1/5)",
-        description="Click **Yes** to begin your Robux order.",
-        color=discord.Color.from_str("#2b6cff"),
+        title="Would you like to start buying robux? (1/5)",
+        description="Click **Yes** to begin the purchase.",
+        color=discord.Color.blurple(),
     )
+
 
 def step2_embed() -> discord.Embed:
     return discord.Embed(
-        title="Amount (2/5)",
-        description="Enter how many Robux you want.\n**Example:** `10000`   •   **Minimum:** `10000`",
-        color=discord.Color.from_str("#2b6cff"),
+        title="How much robux would you like to buy? (2/5)",
+        description="Enter the amount of Robux you want to purchase. **Minimum:** `10,000`",
+        color=discord.Color.blurple(),
     )
+
 
 def step3_embed(amount: int, rate_per_1k: float = 1.0) -> discord.Embed:
     usd = (amount / 1000.0) * rate_per_1k
-    e = discord.Embed(
-        title="Confirm (3/5)",
+    return discord.Embed(
+        title="Would you like to purchase this amount of Robux? (3/5)",
         description=(
-            f"You're purchasing **{amount:,}** Robux\n"
+            f"Amount: **{amount:,}** Robux\n"
             f"Current Rate: **${rate_per_1k:.2f} per 1,000 Robux**\n"
-            f"Estimated: **${usd:.2f} USD**"
+            f"Price in USD: **${usd:.2f}**"
         ),
-        color=discord.Color.from_str("#2b6cff"),
+        color=discord.Color.blurple(),
     )
-    e.set_footer(text="Confirm to continue to payment method")
-    return e
+
 
 def step4_embed() -> discord.Embed:
     return discord.Embed(
-        title="Payment Method (4/5)",
-        description="Pick your payment method below.",
-        color=discord.Color.from_str("#2b6cff"),
+        title="Please select your preferred payment method (4/5)",
+        description="Choose a payment method from the dropdown below.",
+        color=discord.Color.blurple(),
     )
 
-def crypto_embed(wallets: Dict[str, Optional[str]]) -> discord.Embed:
-    lines = []
-    if wallets.get("btc"):  lines.append(f"**BTC:** `{wallets['btc']}`")
-    if wallets.get("ltc"):  lines.append(f"**LTC:** `{wallets['ltc']}`")
-    if wallets.get("eth"):  lines.append(f"**ETH:** `{wallets['eth']}`")
-    if wallets.get("usdt"): lines.append(f"**USDT:** `{wallets['usdt']}`")
-    desc = "Send payment to one of the configured wallets below, then **reply with TXID** in this ticket.\n\n"
-    desc += ("\n".join(lines) if lines else "_No wallets configured yet._")
-    e = discord.Embed(title="Crypto Payment (5/5)", description=desc, color=discord.Color.from_str("#2b6cff"))
-    e.set_footer(text="Press Done after paying")
-    return e
 
-def eneba_embed(link_text: str) -> discord.Embed:
+def step5_embed(pay_type: str, link_text: str) -> discord.Embed:
+    title_map = {
+        "eneba": "Eneba Payment (5/5)",
+        "g2a": "G2A Payment (5/5)",
+        "crypto": "Crypto Payment (5/5)",
+        "giftcard": "Giftcard Instructions (5/5)",
+    }
+    desc_map = {
+        "eneba": f"Please use the selected Eneba link:\n{link_text}\nAfter payment, reply here with proof.",
+        "g2a": f"Please use the selected G2A link:\n{link_text}\nAfter payment, reply here with proof.",
+        "crypto": f"Please pay to this address / link:\n{link_text}\nInclude TXID and network.",
+        "giftcard": f"Please purchase the required gift card and send the code here:\n{link_text}\nOur staff will verify.",
+    }
     e = discord.Embed(
-        title="Eneba Payment (5/5)",
-        description=f"Use this Eneba link:\n{link_text}\nThen reply with proof in this ticket.",
-        color=discord.Color.from_str("#2b6cff"),
+        title=title_map.get(pay_type, "Payment (5/5)"),
+        description=desc_map.get(pay_type, link_text),
+        color=discord.Color.blurple(),
     )
-    e.set_footer(text="Press Done when completed")
     return e
 
-def g2a_embed() -> discord.Embed:
-    e = discord.Embed(
-        title="G2A Gift Card (5/5)",
-        description="Enter your **G2A gift card code** in the modal. A staff member will verify it.",
-        color=discord.Color.from_str("#2b6cff"),
-    )
-    e.set_footer(text="Submit code, then press Done")
-    return e
 
-def giftcard_embed() -> discord.Embed:
-    e = discord.Embed(
-        title="Giftcard (5/5)",
-        description="Enter your **gift card code** in the modal. A staff member will verify it.",
-        color=discord.Color.from_str("#2b6cff"),
-    )
-    e.set_footer(text="Submit code, then press Done")
-    return e
-
-# ====== ADMIN COMMANDS ======
-@bot.tree.command(description="Set only the LOGO and BANNER images for the panel.")
-@app_commands.describe(
-    logo="Logo URL (square). Default is the official white Robux mark.",
-    banner="Banner URL (wide). Optional."
-)
-@app_commands.checks.has_permissions(manage_guild=True)
-async def setbranding(interaction: discord.Interaction, logo: Optional[str] = None, banner: Optional[str] = None):
-    bot.save_branding(interaction.guild.id, logo, banner)
-    await interaction.response.send_message("✅ Branding updated (logo/banner).", ephemeral=True)
-
-@bot.tree.command(description="Add an Eneba payment link (per guild).")
-@app_commands.describe(url="Eneba link")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def addlink(interaction: discord.Interaction, url: str):
-    lid = bot.add_link(interaction.guild.id, "eneba", url)
-    await interaction.response.send_message(f"✅ Added Eneba link with ID **{lid}**.", ephemeral=True)
-
-@bot.tree.command(description="Remove any saved link by ID.")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def removelink(interaction: discord.Interaction, id: int):
-    ok = bot.remove_link(interaction.guild.id, id)
-    if ok:
-        await interaction.response.send_message(f"🗑️ Removed link **{id}**.", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ Link not found for this guild.", ephemeral=True)
-
-@bot.tree.command(description="List saved Eneba links (per guild).")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def listlinks(interaction: discord.Interaction):
-    grouped = bot.list_links_grouped(interaction.guild.id)
-    items = grouped.get("eneba", [])
-    parts = ["**ENEBA**"]
-    if items:
-        for it in items:
-            parts.append(f"• ID `{it['id']}` — {it['url']}")
-    else:
-        parts.append("_none_")
-    await interaction.response.send_message("\n".join(parts), ephemeral=True)
-
-# --- Crypto wallet commands (B selected) ---
-@bot.tree.command(description="Set BTC wallet address for Crypto payments.")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def setbtc(interaction: discord.Interaction, address: str):
-    bot.set_wallet(interaction.guild.id, "btc", address.strip())
-    await interaction.response.send_message("✅ BTC wallet saved.", ephemeral=True)
-
-@bot.tree.command(description="Set LTC wallet address for Crypto payments.")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def setltc(interaction: discord.Interaction, address: str):
-    bot.set_wallet(interaction.guild.id, "ltc", address.strip())
-    await interaction.response.send_message("✅ LTC wallet saved.", ephemeral=True)
-
-@bot.tree.command(description="Set ETH wallet address for Crypto payments.")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def seteth(interaction: discord.Interaction, address: str):
-    bot.set_wallet(interaction.guild.id, "eth", address.strip())
-    await interaction.response.send_message("✅ ETH wallet saved.", ephemeral=True)
-
-@bot.tree.command(description="Set USDT wallet address for Crypto payments.")
-@app_commands.describe(address="Include network if needed, e.g., TRC20/ERC20")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def setusdt(interaction: discord.Interaction, address: str):
-    bot.set_wallet(interaction.guild.id, "usdt", address.strip())
-    await interaction.response.send_message("✅ USDT wallet saved.", ephemeral=True)
-
-@bot.tree.command(description="Show configured crypto wallets (ephemeral).")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def listwallets(interaction: discord.Interaction):
-    w = bot.get_wallets(interaction.guild.id)
-    lines = []
-    for k, label in (("btc","BTC"),("ltc","LTC"),("eth","ETH"),("usdt","USDT")):
-        lines.append(f"**{label}:** {('`'+w[k]+'`') if w.get(k) else '_none_'}")
-    await interaction.response.send_message("\n".join(lines), ephemeral=True)
-
-# ====== PANEL (embed as 1 msg, button as 2nd) ======
-class PurchaseButton(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.primary, custom_id="purchase_btn")
-    async def purchase(self, interaction: discord.Interaction, _):
-        parent = interaction.channel
-        # Create private ticket thread (fallback to public if needed)
-        try:
-            thread = await parent.create_thread(
-                name=f"Order — {interaction.user.display_name}",
-                auto_archive_duration=10080,  # 7 days
-                type=discord.ChannelType.private_thread,
-                invitable=False,
-            )
-        except Exception:
-            thread = await parent.create_thread(
-                name=f"Order — {interaction.user.display_name}",
-                auto_archive_duration=10080,
-            )
-
-        try:
-            await thread.add_user(interaction.user)
-        except Exception:
-            pass
-
-        staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
-        if staff_role:
-            try:
-                await thread.send(f"{staff_role.mention} New order started by {interaction.user.mention}")
-            except Exception:
-                pass
-
-        await interaction.response.send_message(f"🧵 Created thread: {thread.mention}", ephemeral=True)
-
-        note_msg = await thread.send(embed=mk_note_embed(), view=CloseThreadView())
-        try:
-            await note_msg.pin()
-        except Exception:
-            pass
-
-        await thread.send(embed=step1_embed(), view=StartYesNoView(interaction.user.id))
-
-@bot.tree.command(description="Post the Automated Purchase panel (embed + button).")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def post_autoorder(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True, thinking=False)
-    branding = bot.load_branding(interaction.guild.id)
-
-    # 1) Embed (fixed text, editable images)
-    await interaction.channel.send(embed=mk_panel_embed(branding, interaction.guild))
-    # 2) Button
-    await interaction.channel.send(view=PurchaseButton())
-
-    await interaction.followup.send("✅ Posted.", ephemeral=True)
-
-# ====== WIZARD UI ======
 class CloseThreadView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.secondary, custom_id="close_ticket")
-    async def close(self, interaction: discord.Interaction, _):
+    async def close(self, interaction: discord.Interaction, b: discord.ui.Button):
         if isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message("Closing ticket...", ephemeral=True)
             try:
@@ -421,21 +416,23 @@ class CloseThreadView(discord.ui.View):
         else:
             await interaction.response.send_message("Use inside a ticket thread.", ephemeral=True)
 
+
 class StartYesNoView(discord.ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=300)
         self.user_id = user_id
 
     @discord.ui.button(label="Yes", style=discord.ButtonStyle.success)
-    async def yes(self, interaction: discord.Interaction, _):
+    async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("This is not your order.", ephemeral=True)
             return
         await interaction.response.send_message(embed=step2_embed(), view=AmountView(self.user_id))
 
     @discord.ui.button(label="No", style=discord.ButtonStyle.danger)
-    async def no(self, interaction: discord.Interaction, _):
-        await interaction.response.send_message("No problem. Use the panel anytime to start.", ephemeral=True)
+    async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("No problem. Use the button anytime to start.", ephemeral=True)
+
 
 class AmountModal(discord.ui.Modal, title="Enter Robux amount"):
     amount = discord.ui.TextInput(label="Amount", placeholder="10000", required=True, max_length=12)
@@ -454,17 +451,19 @@ class AmountModal(discord.ui.Modal, title="Enter Robux amount"):
             return
         await interaction.response.send_message(embed=step3_embed(amt), view=ConfirmAmountView(self.user_id, amt))
 
+
 class AmountView(discord.ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=300)
         self.user_id = user_id
 
     @discord.ui.button(label="Enter Amount", style=discord.ButtonStyle.primary)
-    async def enter(self, interaction: discord.Interaction, _):
+    async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("This is not your order.", ephemeral=True)
             return
         await interaction.response.send_modal(AmountModal(self.user_id))
+
 
 class ConfirmAmountView(discord.ui.View):
     def __init__(self, user_id: int, amount: int):
@@ -473,120 +472,90 @@ class ConfirmAmountView(discord.ui.View):
         self.amount = amount
 
     @discord.ui.button(label="Yes", style=discord.ButtonStyle.success)
-    async def yes(self, interaction: discord.Interaction, _):
+    async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("This is not your order.", ephemeral=True)
             return
         await interaction.response.send_message(embed=step4_embed(), view=PayTypeView(self.user_id, self.amount))
 
     @discord.ui.button(label="No", style=discord.ButtonStyle.danger)
-    async def no(self, interaction: discord.Interaction, _):
+    async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Okay, start again with the button.", ephemeral=True)
 
-# ---- Payment selection & flows ----
-class PayTypeSelect(discord.ui.Select):
-    def __init__(self):
-        # Plain text labels (no logos). You can add simple emojis if you want.
-        options = [
-            discord.SelectOption(label="Eneba", value="eneba"),
-            discord.SelectOption(label="G2A (Gift Card Code)", value="g2a"),
-            discord.SelectOption(label="Crypto (BTC/LTC/ETH/USDT)", value="crypto"),
-            discord.SelectOption(label="Giftcard (Generic Code)", value="giftcard"),
-        ]
-        super().__init__(placeholder="Select your payment method", min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        view: "PayTypeView" = self.view  # type: ignore
-        if interaction.user.id != view.user_id:
-            await interaction.response.send_message("This is not your order.", ephemeral=True)
-            return
-
-        choice = self.values[0]
-        if choice == "eneba":
-            links = bot.links_for_type(interaction.guild.id, "eneba")
-            if not links:
-                await interaction.response.send_message("No **Eneba** links configured yet.", ephemeral=True)
-                return
-            await interaction.response.send_message("Pick an Eneba link:", view=EnebaChoiceView(view.user_id, view.amount, links), ephemeral=True)
-
-        elif choice == "crypto":
-            wallets = bot.get_wallets(interaction.guild.id)
-            await interaction.response.send_message(embed=crypto_embed(wallets), view=FinishView(view.user_id, view.amount, "crypto", link_used="wallets shown"), ephemeral=True)
-
-        elif choice == "g2a":
-            await interaction.response.send_message(embed=g2a_embed(), ephemeral=True)
-            await interaction.followup.send("Enter your G2A gift card code:", ephemeral=True)
-            await interaction.response.send_modal(GiftCodeModal(view.user_id, view.amount, "g2a"))
-
-        elif choice == "giftcard":
-            await interaction.response.send_message(embed=giftcard_embed(), ephemeral=True)
-            await interaction.followup.send("Enter your gift card code:", ephemeral=True)
-            await interaction.response.send_modal(GiftCodeModal(view.user_id, view.amount, "giftcard"))
 
 class PayTypeView(discord.ui.View):
     def __init__(self, user_id: int, amount: int):
         super().__init__(timeout=300)
         self.user_id = user_id
         self.amount = amount
-        self.add_item(PayTypeSelect())
 
-class EnebaChoiceSelect(discord.ui.Select):
-    def __init__(self, links: List[dict]):
-        options = [discord.SelectOption(label=link["url"][:100], value=str(link["id"])) for link in links[:25]]
-        super().__init__(placeholder="Select an Eneba link", min_values=1, max_values=1, options=options)
+        self.add_item(
+            discord.ui.Select(
+                placeholder="Select your payment method",
+                min_values=1,
+                max_values=1,
+                options=[
+                    discord.SelectOption(label="Eneba", value="eneba"),
+                    discord.SelectOption(label="G2A", value="g2a"),
+                    discord.SelectOption(label="Crypto", value="crypto"),
+                    discord.SelectOption(label="Giftcard", value="giftcard"),
+                ],
+            )
+        )
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This is not your order.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.select()
+    async def select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        pay_type = select.values[0]
+        links = bot.get_links_by_type(interaction.guild.id, pay_type)
+        if not links:
+            await interaction.response.send_message(f"No **{pay_type}** links configured yet.", ephemeral=True)
+            return
+
+        options = []
+        for item in links[:25]:
+            label = item["url"][:100]
+            options.append(discord.SelectOption(label=label, value=str(item["id"])))
+
+        v = LinkChoiceView(self.user_id, self.amount, pay_type, links, options)
+        await interaction.response.send_message("Pick a link:", view=v, ephemeral=True)
+
+
+class LinkChoiceView(discord.ui.View):
+    def __init__(self, user_id: int, amount: int, pay_type: str, links: List[dict], options: List[discord.SelectOption]):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.amount = amount
+        self.pay_type = pay_type
         self.links = links
 
-    async def callback(self, interaction: discord.Interaction):
-        view: "EnebaChoiceView" = self.view  # type: ignore
-        if interaction.user.id != view.user_id:
+        self.select = discord.ui.Select(placeholder=f"Select a {pay_type} option", min_values=1, max_values=1, options=options)
+        self.add_item(self.select)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
             await interaction.response.send_message("This is not your order.", ephemeral=True)
-            return
-        chosen_id = int(self.values[0])
+            return False
+        return True
+
+    @discord.ui.select()
+    async def choose(self, interaction: discord.Interaction, select: discord.ui.Select):
+        chosen_id = int(select.values[0])
         match = next((x for x in self.links if x["id"] == chosen_id), None)
         if not match:
             await interaction.response.send_message("Not found. Try again.", ephemeral=True)
             return
         await interaction.response.send_message(
-            embed=eneba_embed(match["url"]),
-            view=FinishView(view.user_id, view.amount, "eneba", link_used=match["url"]),
+            embed=step5_embed(self.pay_type, match["url"]),
+            view=FinishView(self.user_id, self.amount, self.pay_type, match["url"]),
             ephemeral=True,
         )
 
-class EnebaChoiceView(discord.ui.View):
-    def __init__(self, user_id: int, amount: int, links: List[dict]):
-        super().__init__(timeout=300)
-        self.user_id = user_id
-        self.amount = amount
-        self.add_item(EnebaChoiceSelect(links))
-
-class GiftCodeModal(discord.ui.Modal, title="Enter Gift Card Code"):
-    code = discord.ui.TextInput(label="Code", placeholder="XXXX-XXXX-XXXX-XXXX", required=True, max_length=64)
-
-    def __init__(self, user_id: int, amount: int, pay_type: str):
-        super().__init__()
-        self.user_id = user_id
-        self.amount = amount
-        self.pay_type = pay_type  # "g2a" or "giftcard"
-
-    async def on_submit(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This is not your order.", ephemeral=True)
-            return
-        code_str = str(self.code).strip()
-        masked = code_str[:4] + "…" + code_str[-4:] if len(code_str) >= 8 else "submitted"
-        # Log immediately with masked code
-        bot.log_order(interaction.guild.id, interaction.user.id, self.amount, self.pay_type, f"code:{masked}")
-        await interaction.response.send_message(f"✅ Code received (`{masked}`). A staff member will verify it.", ephemeral=True)
-        try:
-            await interaction.channel.send(
-                f"🔐 Gift code received from {interaction.user.mention} for **{self.pay_type.upper()}**.\n"
-                f"Amount: **{self.amount:,}** Robux\n"
-                f"Masked code: `{masked}`"
-            )
-        except Exception:
-            pass
-        # Offer to finish
-        await interaction.followup.send(view=FinishView(self.user_id, self.amount, self.pay_type, f"code:{masked}"), ephemeral=True)
 
 class FinishView(discord.ui.View):
     def __init__(self, user_id: int, amount: int, pay_type: str, link_used: str):
@@ -597,29 +566,172 @@ class FinishView(discord.ui.View):
         self.link_used = link_used
 
     @discord.ui.button(label="Done", style=discord.ButtonStyle.success)
-    async def done(self, interaction: discord.Interaction, _):
+    async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("This is not your order.", ephemeral=True)
             return
-        # If not already logged (e.g., crypto/eneba path already logs on Done; code modal logged earlier)
-        if self.pay_type in ("crypto", "eneba") and interaction.response.is_done() is False:
-            bot.log_order(interaction.guild.id, interaction.user.id, self.amount, self.pay_type, self.link_used)
-        try:
-            await interaction.channel.send(
-                f"✅ Order logged for {interaction.user.mention}\n"
-                f"**Amount:** {self.amount:,} Robux\n"
-                f"**Payment:** {self.pay_type}\n"
-                f"**Details:** {self.link_used}"
-            )
-            await interaction.response.send_message("Closing ticket. Thank you!", ephemeral=True)
-            await interaction.channel.edit(archived=True, locked=True)
-        except Exception:
-            await interaction.response.send_message("Logged. Could not lock thread automatically.", ephemeral=True)
+        bot.log_order(interaction.guild.id, interaction.user.id, self.amount, self.pay_type, self.link_used)
 
-# ====== EVENTS / RUN ======
-@bot.event
-async def on_ready():
-    print(f"[READY] Logged in as {bot.user} (ID: {bot.user.id})")
+        le = discord.Embed(title="✅ New Completed Order", color=discord.Color.green())
+        le.add_field(name="User", value=f"{interaction.user.mention}", inline=True)
+        le.add_field(name="Payment Method", value=self.pay_type.title(), inline=True)
+        le.add_field(name="Robux Purchased", value=f"{self.amount:,}", inline=False)
+        le.add_field(name="USD Spent", value=f"${(self.amount/1000.0):.2f}", inline=True)
+        le.add_field(name="Order ID", value=str(int(datetime.now().timestamp()*1000)), inline=True)
+        await bot.send_log_embed(interaction.guild.id, le)
+
+        try:
+            await interaction.response.send_message("Closing ticket. Thank you!", ephemeral=True)
+            if isinstance(interaction.channel, discord.Thread):
+                await interaction.channel.edit(archived=True, locked=True)
+        except Exception:
+            pass
+
+
+# ---- Slash commands ----
+@bot.tree.command(description="Post the 'Automated Purchase' panel with button.")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def post_autoorder(interaction: discord.Interaction):
+    branding = bot.load_branding(interaction.guild.id)
+    em = header_embed(branding)
+    view = PurchaseButton()
+    await interaction.response.send_message(embed=em, view=view)
+
+
+@bot.tree.command(description="Add a payment link (per guild).")
+@app_commands.describe(type="eneba, g2a, crypto, giftcard", url="Link or address/text")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def addlink(interaction: discord.Interaction, type: str, url: str):
+    t = type.lower().strip()
+    if t not in PAYMENT_TYPES:
+        await interaction.response.send_message(f"Type must be one of: {', '.join(PAYMENT_TYPES)}", ephemeral=True)
+        return
+    lid = bot.add_link(interaction.guild.id, t, url)
+    await interaction.response.send_message(f"✅ Added **{t}** link with ID **{lid}**.", ephemeral=True)
+
+
+@bot.tree.command(description="Remove link by ID (per guild).")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def removelink(interaction: discord.Interaction, id: int):
+    ok = bot.remove_link(interaction.guild.id, id)
+    if ok:
+        await interaction.response.send_message(f"🗑️ Removed link **{id}**.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ Link not found for this guild.", ephemeral=True)
+
+
+@bot.tree.command(description="List saved links (per guild).")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def listlinks(interaction: discord.Interaction):
+    grouped = bot.list_links_grouped(interaction.guild.id)
+    lines = []
+    for t in PAYMENT_TYPES:
+        items = grouped.get(t, [])
+        lines.append(f"**{t.upper()}**")
+        if items:
+            for it in items:
+                lines.append(f"• ID `{it['id']}` — {it['url']}")
+        else:
+            lines.append("_none_")
+    await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
+@bot.tree.command(description="Set branding (logo/banner/note) for /post_autoorder.")
+@app_commands.describe(logo="Logo URL (square)", banner="Banner URL (wide)", note="Pinned note text shown in thread")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def setbranding(interaction: discord.Interaction, logo: Optional[str] = None, banner: Optional[str] = None, note: Optional[str] = None):
+    bot.save_branding(interaction.guild.id, logo, banner, note)
+    await interaction.response.send_message("✅ Branding updated.", ephemeral=True)
+
+
+@bot.tree.command(description="Set log & vouch channels.")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def setchannels(interaction: discord.Interaction, log_channel: Optional[discord.TextChannel] = None, vouch_channel: Optional[discord.TextChannel] = None):
+    bot.save_branding(
+        interaction.guild.id,
+        logo=None,
+        banner=None,
+        note=None,
+        log_channel=log_channel.id if log_channel else None,
+        vouch_channel=vouch_channel.id if vouch_channel else None,
+    )
+    bot.vouch_next[interaction.guild.id] = 0
+    await interaction.response.send_message("✅ Channels updated.", ephemeral=True)
+
+
+@bot.tree.command(description="Enable/disable auto fake vouch and set random interval (hours).")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def setvouch(interaction: discord.Interaction, enabled: bool, min_hours: int = 10, max_hours: int = 30):
+    bot.set_vouch_auto(interaction.guild.id, enabled, min_hours, max_hours)
+    await interaction.response.send_message(f"✅ Auto vouch {'enabled' if enabled else 'disabled'} ({min_hours}-{max_hours}h).", ephemeral=True)
+
+
+@bot.tree.command(description="Customize emojis/labels used in the fake vouch embed (only set the ones you want to change).")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def setvouchemoji(
+    interaction: discord.Interaction,
+    check: Optional[str] = None,
+    user_lbl: Optional[str] = None,
+    user_val: Optional[str] = None,
+    pay_lbl: Optional[str] = None,
+    pay_val: Optional[str] = None,
+    robux_lbl: Optional[str] = None,
+    usd_lbl: Optional[str] = None,
+    rating_lbl: Optional[str] = None,
+    order_lbl: Optional[str] = None,
+):
+    updates = {
+        "check": check,
+        "user_lbl": user_lbl,
+        "user_val": user_val,
+        "pay_lbl": pay_lbl,
+        "pay_val": pay_val,
+        "robux_lbl": robux_lbl,
+        "usd_lbl": usd_lbl,
+        "rating_lbl": rating_lbl,
+        "order_lbl": order_lbl,
+    }
+    bot.set_vouch_emojis(interaction.guild.id, updates)
+    await interaction.response.send_message("✅ Vouch emojis/labels updated.", ephemeral=True)
+
+
+@bot.tree.command(description="Post one fake vouch now to the configured vouch channel.")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def fakevouchnow(interaction: discord.Interaction):
+    await bot._post_one_fake_vouch(interaction.guild)
+    await interaction.response.send_message("✅ Posted one fake vouch.", ephemeral=True)
+
+
+class PurchaseButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.primary, custom_id="purchase_btn")
+    async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
+        parent = interaction.channel
+        thread = await parent.create_thread(
+            name=f"Order — {interaction.user.display_name}", auto_archive_duration=10080
+        )
+        await interaction.response.send_message(f"🧵 Created thread: {thread.mention}", ephemeral=True)
+
+        branding = bot.load_branding(interaction.guild.id)
+        note_text = branding.get("note_text") or (
+            "Please make sure all conversations related to the deal are done within this ticket. "
+            "Our staff will never DM you regarding active or completed deals."
+        )
+        note_embed = discord.Embed(title="⚠️ Please Note", description=note_text, color=discord.Color.orange())
+        note_msg = await thread.send(embed=note_embed, view=CloseThreadView())
+        try:
+            await note_msg.pin()
+        except Exception:
+            pass
+
+        await thread.send(embed=step1_embed(), view=StartYesNoView(interaction.user.id))
+
+
+def main():
+    bot.run(BOT_TOKEN)
+
 
 if __name__ == "__main__":
-    bot.run(BOT_TOKEN)
+    main()
