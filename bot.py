@@ -26,7 +26,6 @@ import discord
 from discord import app_commands
 print("discord module file:", getattr(discord, "__file__", "unknown"))
 print("discord.py version:", getattr(discord, "__version__", "unknown"))
-assert hasattr(discord, "ext"), "discord.ext missing → wrong module shadowing"
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
