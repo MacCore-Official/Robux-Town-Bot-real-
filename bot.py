@@ -14,6 +14,8 @@
 # Env:
 #   BOT_TOKEN  (required)
 #   DB_PATH    (optional, default: robux_autoorder.db)
+import discord
+from discord.ext import commands
 
 import os
 import sqlite3
