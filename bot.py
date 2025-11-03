@@ -253,11 +253,30 @@ class BrandingModal(discord.ui.Modal, title="Branding URLs"):
         await interaction.response.edit_message(embed=config_summary_embed(cfg))
 
 
-class EmojisModal(discord.ui.Modal, title="Set Emojis / Labels"):
+class CoinEmojisModal(discord.ui.Modal, title="Set Coin Emojis"):
     btc = discord.ui.TextInput(label="btc", required=False, max_length=64)
     ltc = discord.ui.TextInput(label="ltc", required=False, max_length=64)
     eth = discord.ui.TextInput(label="eth", required=False, max_length=64)
     sol = discord.ui.TextInput(label="sol", required=False, max_length=64)
+
+    def __init__(self, cfg: Dict[str, Any]):
+        super().__init__()
+        e = cfg.get("emojis", {})
+        for k in ("btc","ltc","eth","sol"):
+            if k in e:
+                getattr(self, k).default = str(e[k])
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cfg = bot.config
+        cfg.setdefault("emojis", {})
+        for k in ("btc","ltc","eth","sol"):
+            v = str(getattr(self, k).value).strip()
+            if v:
+                cfg["emojis"][k] = v
+        bot.persist()
+        await interaction.response.edit_message(embed=config_summary_embed(cfg))
+
+class PayEmojisModal(discord.ui.Modal, title="Set Payment Emojis"):
     eneba = discord.ui.TextInput(label="eneba", required=False, max_length=64)
     g2a = discord.ui.TextInput(label="g2a", required=False, max_length=64)
     giftcard = discord.ui.TextInput(label="giftcard", required=False, max_length=64)
@@ -266,14 +285,14 @@ class EmojisModal(discord.ui.Modal, title="Set Emojis / Labels"):
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__()
         e = cfg.get("emojis", {})
-        for k in ("btc","ltc","eth","sol","eneba","g2a","giftcard","crypto"):
+        for k in ("eneba","g2a","giftcard","crypto"):
             if k in e:
                 getattr(self, k).default = str(e[k])
 
     async def on_submit(self, interaction: discord.Interaction):
         cfg = bot.config
         cfg.setdefault("emojis", {})
-        for k in ("btc","ltc","eth","sol","eneba","g2a","giftcard","crypto"):
+        for k in ("eneba","g2a","giftcard","crypto"):
             v = str(getattr(self, k).value).strip()
             if v:
                 cfg["emojis"][k] = v
@@ -360,9 +379,13 @@ class AdminPanel(discord.ui.View):
     async def branding(self, interaction: discord.Interaction, b: discord.ui.Button):
         await interaction.response.send_modal(BrandingModal(bot.config))
 
-    @discord.ui.button(label="Emojis", style=discord.ButtonStyle.primary)
-    async def emojis(self, interaction: discord.Interaction, b: discord.ui.Button):
-        await interaction.response.send_modal(EmojisModal(bot.config))
+    @discord.ui.button(label="Coin Emojis", style=discord.ButtonStyle.primary)
+    async def coin_emojis(self, interaction: discord.Interaction, b: discord.ui.Button):
+        await interaction.response.send_modal(CoinEmojisModal(bot.config))
+
+    @discord.ui.button(label="Pay Emojis", style=discord.ButtonStyle.primary)
+    async def pay_emojis(self, interaction: discord.Interaction, b: discord.ui.Button):
+        await interaction.response.send_modal(PayEmojisModal(bot.config))
 
     @discord.ui.button(label="Channels", style=discord.ButtonStyle.secondary)
     async def channels(self, interaction: discord.Interaction, b: discord.ui.Button):
