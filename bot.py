@@ -62,7 +62,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "user_lbl": "👤 User",
         "user_val": "🔒 Hidden",
         "pay_lbl": ":PAYMENT_SUPPORT: Payment Method",
-        "robux_lbl": ":Robux~1: Robux Purchased",
+        "robux_lbl": "<:Robux:1290924165792272418> Robux Purchased",
         "usd_lbl": "💶 USD Spent",
         "rating_lbl": "⭐ Rating",
         "order_lbl": "🧾 Order ID"
