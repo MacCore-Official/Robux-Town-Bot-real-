@@ -35,7 +35,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-class Bot(discord.ext.commands.Bot):
+class Bot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
         self.db: Optional[sqlite3.Connection] = None
