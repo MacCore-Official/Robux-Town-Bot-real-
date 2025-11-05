@@ -1,0 +1,11 @@
+{
+  "logo_url": "https://i.ibb.co/FkDYg7gc/robux-town.png",
+  "auto_banner_url": "https://i.ibb.co/ZRzkHH9N/robux-town-automatic-order.png",
+  "vouch_footer_url": "https://i.ibb.co/5XbkKq64/robux-town-banner.png",
+  "min_usd": 10.0,
+  "max_usd": 150.0,
+  "staff_user_ids": [
+    1422665161466187976,
+    1269145029943758899
+  ]
+}
