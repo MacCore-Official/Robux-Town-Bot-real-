@@ -3,7 +3,7 @@
 #
 # Prefix: +
 # Access: Admin only (manage_guild permission).
-# Configuration: Stored and loaded from a specific Discord message (Message ID set via +setconfigmsg).
+# Configuration: Stored and loaded from a specific Discord message.
 
 import os
 import asyncio
@@ -23,19 +23,21 @@ INTENTS = discord.Intents.default()
 INTENTS.message_content = True
 INTENTS.members = True
 
-# --- GLOBAL CHANNEL CONFIGURATION (Hardcoded for initial setup) ---
+# --- GLOBAL CHANNEL CONFIGURATION ---
 CONFIG_CHANNEL_ID = 1435516058500071478 
-CONFIG_MESSAGE_ID: Optional[int] = None # This must be set via command first!
+# This ID must be set via the +setconfigmsg command after initial setup!
+CONFIG_MESSAGE_ID: Optional[int] = None 
 
 # --- DEFAULT CONFIG STRUCTURE ---
-# This dictionary structure will be stored in the config message
+# This dictionary structure will be stored in the config message.
 DEFAULT_CONFIG_STATE: Dict[str, Any] = {
+    # Default Branding URLs
     "logo_url": "https://i.ibb.co/FkDYg7gc/robux-town.png",
     "auto_banner_url": "https://i.ibb.co/ZRzkHH9N/robux-town-automatic-order.png",
     "vouch_footer_url": "https://i.ibb.co/5XbkKq64/robux-town-banner.png",
-    "min_usd": 5.0,
-    "max_usd": 119.0,
-    # Emojis and panel text remain hardcoded constants for simplicity/stability
+    # Default Vouch Range (10-150 USD)
+    "min_usd": 10.0,
+    "max_usd": 150.0,
 }
 
 # --- IN-MEMORY STATE (Initialized from defaults) ---
@@ -114,7 +116,7 @@ class RTBot(commands.Bot):
                 return False
         except discord.NotFound:
             await ctx.send(f"❌ Config message ID `{CONFIG_MESSAGE_ID}` not found in the config channel. Please reset using `+setconfigmsg`.", delete_after=20)
-            CONFIG_MESSAGE_ID = None # Clear invalid ID
+            CONFIG_MESSAGE_ID = None 
             return False
         except Exception as e:
             await ctx.send(f"❌ Failed to persist config to message: {e}", delete_after=20)
@@ -125,9 +127,6 @@ class RTBot(commands.Bot):
         """Fetches the config message content and updates BOT_STATE."""
         global CONFIG_MESSAGE_ID, BOT_STATE
         
-        # In a real deployment, CONFIG_MESSAGE_ID would likely be saved externally 
-        # (e.g., another file or database) if it's not hardcoded. 
-        # For this exercise, assume it must be set manually on first run.
         if not CONFIG_MESSAGE_ID:
             print("[CONFIG] No Message ID set. Using defaults.")
             return
@@ -141,14 +140,14 @@ class RTBot(commands.Bot):
                 message = await channel.fetch_message(CONFIG_MESSAGE_ID)
                 content = message.content
 
-                # Find the JSON block and parse it
+                # Find the fenced JSON block and parse it
                 start = content.find("```json\n") + len("```json\n")
                 end = content.rfind("\n```")
                 json_data = content[start:end].strip()
 
                 if json_data:
                     loaded_state = json.loads(json_data)
-                    # Merge loaded state over defaults to ensure stability
+                    # Merge loaded state over defaults
                     BOT_STATE.update(loaded_state) 
                     print(f"[CONFIG] Successfully loaded state from message {CONFIG_MESSAGE_ID}")
                 else:
@@ -158,13 +157,12 @@ class RTBot(commands.Bot):
 
         except Exception as e:
             print(f"[CONFIG] Failed to load config from channel: {e}")
-            pass # Continue startup with defaults
+            pass 
 
     async def setup_hook(self):
-        # 1. Attempt to load the message ID if it were persisted (not done here, must be manual for now)
-        # For initial testing, you must manually set CONFIG_MESSAGE_ID in the script or via +setconfigmsg
+        # In a production environment, CONFIG_MESSAGE_ID would be loaded from an external file here.
         
-        # 2. Load the configuration from the message on startup
+        # Load the configuration from the message on startup
         await self._load_config_from_channel()
         print("[SYNC] Commands ready.")
 
@@ -179,8 +177,8 @@ bot = RTBot()
 async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
     """Generates and posts a single fake vouch embed to the specified channel."""
     
-    min_usd = BOT_STATE.get("min_usd", 5.0)
-    max_usd = BOT_STATE.get("max_usd", 119.0)
+    min_usd = BOT_STATE.get("min_usd", 10.0)
+    max_usd = BOT_STATE.get("max_usd", 150.0)
     
     usd = round(random.uniform(min_usd, max_usd), 2)
     robux = int(usd) * 1000
@@ -204,10 +202,10 @@ async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
 
     try:
         await channel.send(embed=e)
-        # ... log successful post ...
+        print(f"[VOUCH] Posted fake vouch (R${usd:.2f}) to {channel.name}")
     except Exception as ex:
-        # ... log failure ...
-        pass
+        print(f"[VOUCH] Post failed: {ex}")
+        await channel.send(f"❌ Failed to post vouch embed here. Check bot permissions: {ex}", delete_after=15)
 
 # --- COMMANDS ---
 
@@ -330,6 +328,7 @@ async def set_config_msg_cmd(ctx: commands.Context, message_id: int):
     """Sets the Message ID used for configuration persistence and immediately loads/saves the state."""
     global CONFIG_MESSAGE_ID
 
+    # Check if the command is run in the correct config channel
     if ctx.channel.id != CONFIG_CHANNEL_ID:
         await ctx.send(f"❌ This command must be run in the designated config channel (<#{CONFIG_CHANNEL_ID}>).", delete_after=15)
         return
@@ -339,13 +338,13 @@ async def set_config_msg_cmd(ctx: commands.Context, message_id: int):
     # 1. Attempt to load existing config from the new message ID
     await bot._load_config_from_channel()
 
-    # 2. Immediately save the current BOT_STATE back to that message (persists any local changes and confirms connectivity)
+    # 2. Immediately save the current BOT_STATE back to that message (persists local changes and confirms connectivity)
     if await bot._update_config_message(ctx):
-        await ctx.send(f"✅ Config Message ID set to **`{message_id}`**. State loaded and saved.", delete_after=10)
+        await ctx.send(f"✅ Config Message ID set to **`{message_id}`**. State loaded and saved. **Do not delete that message!**", delete_after=15)
     else:
         # If persistence failed, revert the message ID
         CONFIG_MESSAGE_ID = None
-        await ctx.send("⚠️ Failed to load or save to the new message ID. Reverting change.", delete_after=15)
+        await ctx.send("⚠️ Failed to load or save to the new message ID. Reverting change. Ensure the bot can read the channel and edit the message.", delete_after=20)
 
 
 # --- MAIN ---
