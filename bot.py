@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town — Final Script: Full Interactive Purchase Flow & Prefix Admin (Polished)
+# Robux Town — Final Script: Full Interactive Purchase Flow & Prefix Admin (Polished & Pinging)
 
 import os
 import asyncio
@@ -51,7 +51,7 @@ EMOJIS: Dict[str, str] = {
 # Mapping for Vouch Embeds (to display correct icon based on random method name)
 VOUCH_EMOJI_MAP = {
     "Giftcards": EMOJIS["rewarble"],
-    "Cryptocurrency": EMOJIS["bitcoin"],
+    "Cryptocurrency": EMOIS["bitcoin"],
     "PayPal": EMOJIS["paypal"]
 }
 
@@ -73,6 +73,7 @@ G2A_LINKS = {
     25: "https://www.g2a.com/rewarble-visa-gift-card-25-usd-by-rewarble-key-global-i10000502992003",
 }
 
+# --- POLISHED PANEL TEXT (With enhanced spacing) ---
 PANEL_TEXT = (
     "This bot is a Discord bot designed to streamline the process of purchasing and distributing Robux, the virtual currency used in Roblox.\n"
     "\n"
@@ -89,8 +90,7 @@ PANEL_TEXT = (
     "Enjoy a variety of automated payment methods including Cryptocurrency, PayPal, and more!\n"
 )
 
-# --- CONFIGURATION MANAGEMENT ---
-
+# --- CONFIGURATION MANAGEMENT (Unchanged) ---
 def load_config() -> Dict[str, Any]:
     if os.path.exists(CONFIG_FILE):
         try:
@@ -123,7 +123,7 @@ def save_config(config: Dict[str, Any]):
 
 BOT_CONFIG = load_config()
 
-# --- UTILITIES & BOT CLASS ---
+# --- UTILITIES & BOT CLASS (Unchanged) ---
 def admin_only():
     async def predicate(ctx):
         if not ctx.author.guild_permissions.manage_guild:
@@ -187,7 +187,7 @@ class RTBot(commands.Bot):
 
 bot = RTBot()
 
-# --- VOUCH LOGIC (Updated Layout & Emoji) ---
+# --- VOUCH LOGIC (Final Polished Embed) ---
 
 async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
     """Generates and posts a single fake vouch embed to the specified channel with 2-column layout."""
@@ -205,7 +205,7 @@ async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
     e = discord.Embed(color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
     e.title = f"{bot._emoji('check')} New Completed Order"
     
-    # --- TWO-COLUMN LAYOUT (Final Aesthetic Polish) ---
+    # --- TWO-COLUMN LAYOUT (Final Aesthetic) ---
     e.add_field(name=f"{bot._emoji('user_lbl')}", value="🔒 Hidden", inline=True)
     e.add_field(name=f"{bot._emoji('pay_lbl')}", value=f"{payment_icon} {payment_method_name}", inline=True)
     
@@ -230,6 +230,7 @@ async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
         print(f"[VOUCH] Post failed: {ex}")
 
 # --- TICKET SYSTEM VIEWS & FLOW ---
+# (Only the PurchaseButtonView and PurchaseDetailsModal have user interaction changes)
 
 class OrderConfirmationView(discord.ui.View):
     def __init__(self, robux_amount: int, message: discord.Message):
@@ -397,7 +398,7 @@ class PaymentMethodSelect(discord.ui.View):
             await crypto_select_msg.edit(view=CryptoSelectionView(self.robux_amount, method, crypto_select_msg))
         
         elif method in ["paypal", "card", "giftcard"]:
-            link_list = ENEBA_LINKS if method == "paypal" else G2A_LINBAKS
+            link_list = ENEBA_LINKS if method == "paypal" else G2A_LINKS
             link_type = "Eneba" if method == "paypal" else "G2A"
             
             links_to_show = {price: link for price, link in link_list.items() if price >= usd}
@@ -499,26 +500,29 @@ class PurchaseButtonView(discord.ui.View):
     @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.primary, custom_id="purchase_btn", emoji="💠")
     async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
         parent = interaction.channel
+        user = interaction.user # Capture user object for pinging
         
         try:
-            th = await parent.create_thread(name=f"Order — {interaction.user.display_name}", auto_archive_duration=10080)
+            th = await parent.create_thread(name=f"Order — {user.display_name}", auto_archive_duration=10080)
             
+            # 1. Ping the user and confirm ticket creation in the original channel
             await interaction.response.send_message(
                 f"Ticket created! → {th.mention}", 
                 ephemeral=True
             )
             
-            # Send the message without the view first
+            # 2. Send the starting message inside the thread (Step 1/5)
             start_embed = discord.Embed(
                 title="Would you like to start buying robux? (1/5)",
-                description="Please click \"Yes\" if you would like to start purchasing your Robux.",
+                description=f"{user.mention}, please click \"Yes\" if you would like to start purchasing your Robux.", # Pings the user in the thread
                 color=discord.Color.blue()
             )
             start_msg = await th.send(embed=start_embed)
             
-            # Edit the message to attach the view, passing the captured message object
-            await start_msg.edit(view=StartBuyingView(interaction.user.id, start_msg))
+            # 3. Edit the message to attach the view, passing the captured message object
+            await start_msg.edit(view=StartBuyingView(user.id, start_msg))
             
+            # 4. Send initial disclaimer message
             await th.send(
                 embed=discord.Embed(
                     title="⚠️ Please Note",
