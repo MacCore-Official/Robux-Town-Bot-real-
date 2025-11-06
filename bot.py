@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town — Final Script: Full Interactive Purchase Flow & Prefix Admin (CRITICAL FIXES)
+# Robux Town — Final Script: Full Interactive Purchase Flow & Prefix Admin (All Fixes)
 
 import os
 import asyncio
@@ -23,7 +23,7 @@ INTENTS = discord.Intents.default()
 INTENTS.message_content = True
 INTENTS.members = True
 
-# Hardcoded Emojis and Payment Links (Unchanged)
+# Hardcoded Emojis and Payment Links
 EMOJIS: Dict[str, str] = {
     "paypal": "<:PayPal:1435526543513354354>",
     "bitcoin": "<:Bitcoin:1435526466527039579>",
@@ -48,7 +48,7 @@ VOUCH_EMOJI_MAP = {
     "PayPal": EMOJIS["paypal"]
 }
 
-# --- Rate, Limits, Links (Unchanged) ---
+# --- Rate, Limits, Links ---
 ROBUX_RATE = 1000 
 MIN_USD = 10.0
 MIN_ROBUX = 10000
@@ -82,7 +82,7 @@ PANEL_TEXT = (
     "Enjoy a variety of automated payment methods including Cryptocurrency, PayPal, and more!\n"
 )
 
-# --- CONFIGURATION MANAGEMENT (Unchanged) ---
+# --- CONFIGURATION MANAGEMENT ---
 
 def load_config() -> Dict[str, Any]:
     if os.path.exists(CONFIG_FILE):
@@ -116,7 +116,7 @@ def save_config(config: Dict[str, Any]):
 
 BOT_CONFIG = load_config()
 
-# --- UTILITIES & BOT CLASS (Unchanged) ---
+# --- UTILITIES & BOT CLASS ---
 def admin_only():
     async def predicate(ctx):
         if not ctx.author.guild_permissions.manage_guild:
@@ -192,29 +192,22 @@ async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
     robux = int(usd) * 1000
     stars = random.choices([5,4,3,2,1], weights=[60,25,10,4,1], k=1)[0]
     order_id = str(random.randrange(10**15, 10**18))
-    payment_method_name = random.choice(["Giftcards", "Cryptocurrency", "PayPal"]) 
-    
-    # Use the map to get the correct icon, defaulting to the bitcoin emoji for safety
+    payment_method_name = random.choice(list(VOUCH_EMOJI_MAP.keys())) 
     payment_icon = VOUCH_EMOJI_MAP.get(payment_method_name, EMOJIS["bitcoin"]) 
 
     e = discord.Embed(color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
     e.title = f"{bot._emoji('check')} New Completed Order"
     
     # --- TWO-COLUMN LAYOUT ---
-    
-    # ROW 1 (Inline)
     e.add_field(name=f"{bot._emoji('user_lbl')}", value="🔒 Hidden", inline=True)
-    e.add_field(name=f"{bot._emoji('pay_lbl')}", value=f"{payment_icon} {payment_method_name}", inline=True) # Icon + Name
+    e.add_field(name=f"{bot._emoji('pay_lbl')}", value=f"{payment_icon} {payment_method_name}", inline=True)
     
-    # ROW 2 (Full Width)
     e.add_field(name=f"{bot._emoji('robux')} Robux Purchased", value=f"{robux:,} Robux", inline=False) 
     
-    # ROW 3 (Inline)
     e.add_field(name=f"{bot._emoji('usd_lbl')} USD Spent", value=f"${usd:.2f}", inline=True)
     stars_text = "★"*stars + "☆"*(5-stars) + f" ({stars}/5)"
     e.add_field(name=f"{bot._emoji('rating_lbl')}", value=stars_text, inline=True)
     
-    # ROW 4 (Full Width)
     e.add_field(name=f"{bot._emoji('order_lbl')} Order ID", value=order_id, inline=False) 
 
     # --- Footer and Image ---
@@ -230,7 +223,6 @@ async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
         print(f"[VOUCH] Post failed: {ex}")
 
 # --- TICKET SYSTEM VIEWS & FLOW ---
-# (All View definitions are now placed here, fixing the NameError)
 
 class OrderConfirmationView(discord.ui.View):
     def __init__(self, robux_amount: int, message: discord.Message):
@@ -243,15 +235,16 @@ class OrderConfirmationView(discord.ui.View):
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=interaction.message.content + "\n\n✅ Confirmed.", view=None)
         
-        # Move to Step 4/5: Payment Method Selection
         select_msg = await interaction.channel.send(
             embed=discord.Embed(
                 title="Please select your preferred payment method (4/5)",
                 description="Please select your preferred payment method from the options provided below.",
                 color=discord.Color.blue()
             ),
-            view=PaymentMethodSelect(self.robux_amount, select_msg)
+            view=PaymentMethodSelect(self.robux_amount, None) # Placeholder None
         )
+        # Edit the message to link the view to the message object
+        await select_msg.edit(view=PaymentMethodSelect(self.robux_amount, select_msg))
         self.stop()
 
     @discord.ui.button(label="No", style=discord.ButtonStyle.red)
@@ -283,6 +276,7 @@ class CryptoSelectionView(discord.ui.View):
     )
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
         crypto = select.values[0]
+        
         mock_crypto_address = "bc1q8pxcpy9x2n7c3nstlktl5jd0m2wdnauya3hxw" 
         mock_crypto_amount = round(self.usd_amount / random.uniform(20000, 30000), 8) 
 
@@ -393,14 +387,15 @@ class PaymentMethodSelect(discord.ui.View):
                 description="You have selected **Cryptocurrency** as your payment method. What crypto will you be sending?",
                 color=discord.Color.blue()
             )
-            crypto_select_msg = await interaction.channel.send(embed=crypto_embed, view=CryptoSelectionView(self.robux_amount, method, crypto_select_msg))
+            # Send message and then edit it to link the view to the message object
+            crypto_select_msg = await interaction.channel.send(embed=crypto_embed, view=CryptoSelectionView(self.robux_amount, method, None))
+            await crypto_select_msg.edit(view=CryptoSelectionView(self.robux_amount, method, crypto_select_msg))
         
         elif method in ["paypal", "card", "giftcard"]:
             link_list = ENEBA_LINKS if method == "paypal" else G2A_LINKS
             link_type = "Eneba" if method == "paypal" else "G2A"
             
             # Link generation logic
-            required_links_desc = []
             links_to_show = {price: link for price, link in link_list.items() if price >= usd}
             if not links_to_show: links_to_show = link_list
 
@@ -453,7 +448,6 @@ class StartBuyingView(discord.ui.View):
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=interaction.message.content + "\n\n✅ Yes.", view=None)
         
-        # Move to Step 2/5: Ask for amount
         await interaction.channel.send(
             embed=discord.Embed(
                 title="How much Robux would you like to buy? (2/5)",
@@ -495,7 +489,6 @@ class TicketStaffView(discord.ui.View):
         self.stop()
         
 class PurchaseButtonView(discord.ui.View):
-    """Initial view posted by +post_autoorder."""
     def __init__(self): 
         super().__init__(timeout=None)
         
@@ -511,14 +504,17 @@ class PurchaseButtonView(discord.ui.View):
                 ephemeral=True
             )
             
-            start_msg = await th.send(
-                embed=discord.Embed(
-                    title="Would you like to start buying robux? (1/5)",
-                    description="Please click \"Yes\" if you would like to start purchasing your Robux.",
-                    color=discord.Color.blue()
-                ),
-                view=StartBuyingView(interaction.user.id, start_msg)
+            # Send the message without the view first
+            start_embed = discord.Embed(
+                title="Would you like to start buying robux? (1/5)",
+                description="Please click \"Yes\" if you would like to start purchasing your Robux.",
+                color=discord.Color.blue()
             )
+            start_msg = await th.send(embed=start_embed)
+            
+            # Edit the message to attach the view, passing the captured message object
+            await start_msg.edit(view=StartBuyingView(interaction.user.id, start_msg))
+            
             await th.send(
                 embed=discord.Embed(
                     title="⚠️ Please Note",
@@ -528,10 +524,11 @@ class PurchaseButtonView(discord.ui.View):
             )
 
         except Exception as e: 
-            print(f"[ORDER] Failed to create thread: {e}")
-            await interaction.response.send_message("❌ Error: Could not start the purchase process. Check bot permissions.", ephemeral=True)
+            print(f"[ORDER] Failed in thread creation or initial message: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ Critical Error: Could not finalize ticket setup. Check bot permissions.", ephemeral=True)
 
-# --- LISTENER FOR USER INPUT (Unchanged) ---
+# --- LISTENER FOR USER INPUT ---
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -565,7 +562,6 @@ async def on_message(message):
                 return
         
         except Exception as e:
-             # print(f"Error in on_message processing: {e}") # Debugging
              pass
 
     await bot.process_commands(message)
@@ -618,7 +614,7 @@ async def set_autovouch_cmd(ctx: commands.Context, channel: discord.TextChannel,
 @admin_only()
 async def post_autoorder_cmd(ctx: commands.Context):
     em = discord.Embed(
-        title="🛒 Automated Purchase", 
+        title="<:Robux:1435526693472178176>  Automated Purchase", 
         description=PANEL_TEXT, 
         color=discord.Color.dark_magenta()
     )
