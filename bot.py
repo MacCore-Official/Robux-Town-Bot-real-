@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town — Final Script: Full Interactive Purchase Flow & Prefix Admin (Polished & Pinging)
+# Robux Town — Final Script: Full Interactive Purchase Flow & Prefix Admin (Fully Debugged)
 
 import os
 import asyncio
@@ -48,14 +48,14 @@ EMOJIS: Dict[str, str] = {
     "cart": "🛒" # Used for Automated Purchase title
 }
 
-# Mapping for Vouch Embeds (to display correct icon based on random method name)
+# --- FIX: Correctly reference EMOJIS (not EMOIS) ---
 VOUCH_EMOJI_MAP = {
     "Giftcards": EMOJIS["rewarble"],
-    "Cryptocurrency": EMOIS["bitcoin"],
+    "Cryptocurrency": EMOJIS["bitcoin"],
     "PayPal": EMOJIS["paypal"]
 }
 
-# --- Rate, Limits, Links ---
+# --- Rate, Limits, Links (Unchanged) ---
 ROBUX_RATE = 1000 
 MIN_USD = 10.0
 MIN_ROBUX = 10000
@@ -73,7 +73,6 @@ G2A_LINKS = {
     25: "https://www.g2a.com/rewarble-visa-gift-card-25-usd-by-rewarble-key-global-i10000502992003",
 }
 
-# --- POLISHED PANEL TEXT (With enhanced spacing) ---
 PANEL_TEXT = (
     "This bot is a Discord bot designed to streamline the process of purchasing and distributing Robux, the virtual currency used in Roblox.\n"
     "\n"
@@ -91,6 +90,7 @@ PANEL_TEXT = (
 )
 
 # --- CONFIGURATION MANAGEMENT (Unchanged) ---
+
 def load_config() -> Dict[str, Any]:
     if os.path.exists(CONFIG_FILE):
         try:
@@ -229,8 +229,7 @@ async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
     except Exception as ex:
         print(f"[VOUCH] Post failed: {ex}")
 
-# --- TICKET SYSTEM VIEWS & FLOW ---
-# (Only the PurchaseButtonView and PurchaseDetailsModal have user interaction changes)
+# --- TICKET SYSTEM VIEWS & FLOW (Contains Fixes for NameError) ---
 
 class OrderConfirmationView(discord.ui.View):
     def __init__(self, robux_amount: int, message: discord.Message):
@@ -500,29 +499,25 @@ class PurchaseButtonView(discord.ui.View):
     @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.primary, custom_id="purchase_btn", emoji="💠")
     async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
         parent = interaction.channel
-        user = interaction.user # Capture user object for pinging
+        user = interaction.user 
         
         try:
             th = await parent.create_thread(name=f"Order — {user.display_name}", auto_archive_duration=10080)
             
-            # 1. Ping the user and confirm ticket creation in the original channel
             await interaction.response.send_message(
                 f"Ticket created! → {th.mention}", 
                 ephemeral=True
             )
             
-            # 2. Send the starting message inside the thread (Step 1/5)
             start_embed = discord.Embed(
                 title="Would you like to start buying robux? (1/5)",
-                description=f"{user.mention}, please click \"Yes\" if you would like to start purchasing your Robux.", # Pings the user in the thread
+                description=f"{user.mention}, please click \"Yes\" if you would like to start purchasing your Robux.",
                 color=discord.Color.blue()
             )
             start_msg = await th.send(embed=start_embed)
             
-            # 3. Edit the message to attach the view, passing the captured message object
             await start_msg.edit(view=StartBuyingView(user.id, start_msg))
             
-            # 4. Send initial disclaimer message
             await th.send(
                 embed=discord.Embed(
                     title="⚠️ Please Note",
