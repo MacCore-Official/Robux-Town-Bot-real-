@@ -120,6 +120,7 @@ def admin_only():
 class RTBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="+", intents=INTENTS, help_command=None)
+bot = RTBot()
 
     def _emoji(self, key: str, default: str = "") -> str:
         return str(EMOJIS.get(key, default))
@@ -533,7 +534,6 @@ async def on_message(message: discord.Message):
 
 # --- PREFIX COMMANDS (Admin Only) ---
 
-bot = RTBot()
 
 @bot.command(name="help")
 async def custom_help(ctx: commands.Context):
