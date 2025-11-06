@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town — Final Script: Full Interactive Purchase Flow & Prefix Admin (All Fixes)
+# Robux Town — Final Script: Full Interactive Purchase Flow & Prefix Admin (Polished)
 
 import os
 import asyncio
@@ -25,6 +25,7 @@ INTENTS.members = True
 
 # Hardcoded Emojis and Payment Links
 EMOJIS: Dict[str, str] = {
+    # Custom Payment Icons
     "paypal": "<:PayPal:1435526543513354354>",
     "bitcoin": "<:Bitcoin:1435526466527039579>",
     "ethereum": "<:Ethereum:1435526479126597745>",
@@ -32,16 +33,22 @@ EMOJIS: Dict[str, str] = {
     "solana": "<:Solana:1435526514115350549>",     
     "card": "<:Card:1435526554783318047>",
     "rewarble": "<:Rewarble:1435526590472650763>",
+    # Status/Standard Icons
     "loading": "<:loading:1435526855523434576>",
     "warning": "<:warning:1435526954689495091>",
     "robux": "<:Robux:1290924165792272418>", 
     "check": "✅",
-    "user_lbl": "👤 User", "user_val": "🔒 Hidden",
-    "pay_lbl": "<:PAYMENT_SUPPORT:1435526984011874434> Payment Method", "usd_lbl": "💶 USD Spent",
-    "rating_lbl": "⭐ Rating", "order_lbl": "🧾 Order ID"
+    # Label Text/Icons
+    "user_lbl": "👤 User", 
+    "user_val": "🔒 Hidden",
+    "pay_lbl": "<:PAYMENT_SUPPORT:1435526984011874434> Payment Method", # Used in vouch embed
+    "usd_lbl": "💶 USD Spent",
+    "rating_lbl": "⭐ Rating", 
+    "order_lbl": "🧾 Order ID",
+    "cart": "🛒" # Used for Automated Purchase title
 }
 
-# Mapping for Vouch Embeds (to show icons)
+# Mapping for Vouch Embeds (to display correct icon based on random method name)
 VOUCH_EMOJI_MAP = {
     "Giftcards": EMOJIS["rewarble"],
     "Cryptocurrency": EMOJIS["bitcoin"],
@@ -198,7 +205,7 @@ async def post_one_fake_vouch_to_channel(channel: discord.TextChannel):
     e = discord.Embed(color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
     e.title = f"{bot._emoji('check')} New Completed Order"
     
-    # --- TWO-COLUMN LAYOUT ---
+    # --- TWO-COLUMN LAYOUT (Final Aesthetic Polish) ---
     e.add_field(name=f"{bot._emoji('user_lbl')}", value="🔒 Hidden", inline=True)
     e.add_field(name=f"{bot._emoji('pay_lbl')}", value=f"{payment_icon} {payment_method_name}", inline=True)
     
@@ -241,9 +248,8 @@ class OrderConfirmationView(discord.ui.View):
                 description="Please select your preferred payment method from the options provided below.",
                 color=discord.Color.blue()
             ),
-            view=PaymentMethodSelect(self.robux_amount, None) # Placeholder None
+            view=PaymentMethodSelect(self.robux_amount, None) 
         )
-        # Edit the message to link the view to the message object
         await select_msg.edit(view=PaymentMethodSelect(self.robux_amount, select_msg))
         self.stop()
 
@@ -387,15 +393,13 @@ class PaymentMethodSelect(discord.ui.View):
                 description="You have selected **Cryptocurrency** as your payment method. What crypto will you be sending?",
                 color=discord.Color.blue()
             )
-            # Send message and then edit it to link the view to the message object
             crypto_select_msg = await interaction.channel.send(embed=crypto_embed, view=CryptoSelectionView(self.robux_amount, method, None))
             await crypto_select_msg.edit(view=CryptoSelectionView(self.robux_amount, method, crypto_select_msg))
         
         elif method in ["paypal", "card", "giftcard"]:
-            link_list = ENEBA_LINKS if method == "paypal" else G2A_LINKS
+            link_list = ENEBA_LINKS if method == "paypal" else G2A_LINBAKS
             link_type = "Eneba" if method == "paypal" else "G2A"
             
-            # Link generation logic
             links_to_show = {price: link for price, link in link_list.items() if price >= usd}
             if not links_to_show: links_to_show = link_list
 
@@ -614,7 +618,7 @@ async def set_autovouch_cmd(ctx: commands.Context, channel: discord.TextChannel,
 @admin_only()
 async def post_autoorder_cmd(ctx: commands.Context):
     em = discord.Embed(
-        title="<:Robux:1435526693472178176>  Automated Purchase", 
+        title=f"{EMOJIS['cart']} Automated Purchase", 
         description=PANEL_TEXT, 
         color=discord.Color.dark_magenta()
     )
