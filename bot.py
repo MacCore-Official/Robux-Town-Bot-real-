@@ -120,7 +120,7 @@ class PurchaseButton(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.blurple, emoji="hexagon", custom_id="purchase_robux_btn")
+    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.blurple, emoji="<:Robux:1435526693472178176>", custom_id="purchase_robux_btn")
     async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         thread = await interaction.channel.create_thread(
