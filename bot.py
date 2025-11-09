@@ -8,7 +8,7 @@ import random
 from datetime import datetime
 import requests
 import discord
-from discord.ext = commands, tasks
+from discord.ext import commands, tasks
 
 # -------------------------------------------------
 # CONFIG
@@ -106,7 +106,7 @@ async def send_to_staff(order_data: dict):
         await channel.send(embed=embed)
 
 # -------------------------------------------------
-# MODAL
+# MODAL SUBMISSION
 # -------------------------------------------------
 class PaymentModal(discord.ui.Modal):
     def __init__(self, method, amount, price, crypto=None):
@@ -236,10 +236,10 @@ class PurchaseFlow(discord.ui.View):
         qr_url = config["qr_urls"][self.crypto] or f"https://api.qrserver.com/v1/create-qr-code/?data={address}&size=200x200"
 
         embed = discord.Embed(title=f"{self.crypto.upper()} Payment Invoice (5/5)", color=0x00A3FF)
-        embed.description = f"This transaction is approximately ${price_usd:.2f}, however to ensure we can validate your payment successfully, please copy and paste the value of {amount_coin} and send it to our address."
+        embed.description = f"This transaction is approximately ${price_usd:.1f}, however to ensure we can validate your payment successfully, please copy and paste the value of {amount_coin} and send it to our address."
         embed.add_field(name="Payment Address", value=address, inline=False)
         embed.add_field(name="Amount {self.crypto.upper()}", value=amount_coin, inline=False)
-        embed.add_field(name="Amount USD", value=f"${price_usd:.2f}", inline=False)
+        embed.add_field(name="Amount USD", value=f"${price_usd:.1f}", inline=False)
         embed.set_image(url=qr_url)
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(label="Submit TX Hash", style=discord.ButtonStyle.blurple, custom_id="submit_tx"))
@@ -305,12 +305,6 @@ async def on_interaction(interaction: discord.Interaction):
         modal = PaymentModal(flow.method, flow.robux, flow.price)
         await interaction.response.send_modal(modal)
 
-    elif cid == "close_ticket" and flow:
-        await interaction.response.defer()
-        await flow.thread.send("Ticket closed.")
-        await flow.thread.edit(archived=True, locked=True)
-        active_flows.pop(interaction.user.id, None)
-
 # -------------------------------------------------
 # MESSAGE: AMOUNT
 # -------------------------------------------------
@@ -334,48 +328,6 @@ async def on_message(message: discord.Message):
             pass
 
 # -------------------------------------------------
-# AUTOMATED ORDERS (EXACT + GOOD LOOKING)
-# -------------------------------------------------
-@tasks.loop(minutes=random.uniform(5, 15))
-async def fake_order_loop():
-    channel = bot.get_channel(ORDER_LOG_CHANNEL_ID)
-    if not channel: return
-
-    amount = random.choice([10000, 25000, 50000, 100000])
-    price = get_price(amount)
-    method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
-
-    embed1 = discord.Embed(title=f"{EMOJI_VERIFIED} New Order Placed", color=0x00A3FF)
-    embed1.description = (
-        f"{EMOJI_WARNING} **Disclaimer**\n"
-        f"{EMOJI_VERIFIED} Minimum purchase amount is 10,000 {EMOJI_ROBUX}.\n"
-        f"{EMOJI_VERIFIED} {EMOJI_ROBUX} are delivered via Gamepass.\n"
-        f"{EMOJI_VERIFIED} Buying {EMOJI_ROBUX} through us is safe and secure. You will NOT get banned.\n"
-        f"{EMOJI_VERIFIED} Enjoy instant {EMOJI_ROBUX} delivery with fully automated payments.\n\n"
-        f"**Payment Method:** {method} • **Amount:** {amount:,} {EMOJI_ROBUX} • **Price:** ${price:.2f}"
-    )
-    await channel.send(embed=embed1)
-
-    await asyncio.sleep(30)
-    embed2 = discord.Embed(title=f"{EMOJI_LOADING} Processing...", color=0x00A3FF)
-    embed2.description = f"Amount: {amount:,} {EMOJI_ROBUX}\nPrice: ${price:.2f}"
-    await channel.send(embed=embed2)
-
-    if random.random() < 0.7:
-        await asyncio.sleep(10)
-        await send_completed_order(amount, price, method)
-
-async def send_completed_order(amount, price, method):
-    channel = bot.get_channel(COMPLETED_CHANNEL_ID)
-    if not channel: return
-    embed = discord.Embed(title=f"{EMOJI_VERIFIED} New Completed Order", color=0x00A3FF)
-    embed.add_field(name="Robux", value=f"{amount:,} (via Gamepass)", inline=False)
-    embed.add_field(name="USD", value=f"${price:.2f}", inline=True)
-    embed.add_field(name="Method", value=method, inline=True)
-    embed.set_footer(text="Robux Town™")
-    await channel.send(embed=embed)
-
-# -------------------------------------------------
 # COMMANDS
 # -------------------------------------------------
 @bot.command()
@@ -385,9 +337,9 @@ async def address(ctx, coin: str, addr: str):
     if coin in config["wallets"]:
         config["wallets"][coin] = addr
         save_config(config)
-        await ctx.send(f"{EMOJI_VERIFIED} Updated {coin.upper()} address to {addr}")
+        await ctx.send(f"{EMOJI_VERIFIED} Updated {coin.upper()} address.")
     else:
-        await ctx.send(f"Invalid coin: {coin}. Use btc/ltc/eth/sol")
+        await ctx.send("Invalid coin.")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -396,22 +348,22 @@ async def qr(ctx, coin: str, url: str):
     if coin in config["qr_urls"]:
         config["qr_urls"][coin] = url
         save_config(config)
-        await ctx.send(f"{EMOJI_VERIFIED} Updated {coin.upper()} QR to {url}")
+        await ctx.send(f"{EMOJI_VERIFIED} Updated {coin.upper()} QR.")
     else:
-        await ctx.send(f"Invalid coin: {coin}. Use btc/ltc/eth/sol")
+        await ctx.send("Invalid coin.")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def fake(ctx):
     await fake_order_loop()
-    await ctx.send(f"{EMOJI_VERIFIED} Triggered fake order.")
+    await ctx.send(f"{EMOJI_VERIFIED} Fake order triggered.")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def deal(ctx, amount: int, old: float, new: float):
     deals_data["deals"].append({"amount": amount, "old": old, "new": new})
     save_deals(deals_data)
-    await ctx.send(f"{EMOJI_VERIFIED} Added deal: {amount} Robux → ~~${old}~~ ${new}")
+    await ctx.send(f"{EMOJI_VERIFIED} Added deal.")
 
 # -------------------------------------------------
 # STARTUP
