@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FIXED ALL ERRORS + EXACT UI + LIVE PRICES + COMMANDS + LOG
+# Robux Town™ – FIXED NAMEERROR + EXACT UI + LIVE PRICES + COMMANDS + LOG
 import os
 import asyncio
 import json
