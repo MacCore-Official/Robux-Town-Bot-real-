@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town — Automatic Order Flow (Blue Border, Persistent, Restart-Safe)
+# Robux Town — Automatic Order Flow (Blue Border, Persistent Views, Northflank-Ready)
 import os
 import asyncio
 import json
@@ -24,9 +24,8 @@ INFO_CHANNEL_ID = 1435516058105675818
 DEALS_CHANNEL_ID = 1435516058105675817
 STAFF_ROLE_ID = 1435516057526734991
 
-# Emojis (replace IDs if needed)
+# Emojis
 EMOJI_ROBUX = "<:Robux:1396166686356275200>"
-EMOJI_SNOW = "snowflake"  # default, can be changed via +panel
 
 # Persistent storage
 DEALS_FILE = "deals.json"
@@ -45,7 +44,7 @@ DEFAULT_DEALS = {
     ]
 }
 
-# Load or create deals
+# Load/Save Deals
 def load_deals():
     if os.path.exists(DEALS_FILE):
         with open(DEALS_FILE, "r") as f:
@@ -58,109 +57,71 @@ def save_deals(data):
 
 deals_data = load_deals()
 
-# --- EMBED: Info Channel (Blue Border) ---
-async def send_info_embed():
-    channel = bot.get_channel(INFO_CHANNEL_ID)
-    if not channel:
-        print("Info channel not found!")
-        return
+# --- PERSISTENT VIEWS ---
+class PurchaseButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)  # Persistent
 
-    embed = discord.Embed(
-        color=0x00A3FF  # BLUE BORDER
-    )
-    embed.set_author(name="Robux Town™", icon_url="https://i.imgur.com/ROBUXTOWN.png")
+    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.blurple, emoji="hexagon", custom_id="purchase_robux_btn")
+    async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        thread = await interaction.channel.create_thread(
+            name=f"Purchase-{interaction.user.name}-{interaction.id[:6]}",
+            auto_archive_duration=1440
+        )
+        await thread.add_user(interaction.user)
+        flow = PurchaseFlow(interaction.user.id, thread)
+        await flow.send_step(1)
+        await interaction.followup.send("Purchase started! Check your thread.", ephemeral=True)
 
-    embed.description = (
-        "lock **Automated Purchase**\n"
-        "A secure, instant Discord bot for buying **Robux** with zero hassle.\n\n"
-        "zap **Instant Delivery**\n"
-        "Robux hits your account in **under 60 seconds**.\n\n"
-        "credit_card **Smart Payments**\n"
-        "Fully automated — no middlemen, no delays.\n\n"
-        "shield **Bank-Level Security**\n"
-        "Every transaction is encrypted and verified.\n\n"
-        "globe_with_meridians **Payment Options**\n"
-        "• **Visa Gift Card (G2A)**\n"
-        "• **PayPal (Eneba)**\n"
-        "• **BTC • LTC • SOL • ETH**"
-    )
-
-    embed.set_image(url="https://i.imgur.com/ROBUXTOWNBANNER.png")
-
-    view = discord.ui.View(timeout=None)
-    view.add_item(discord.ui.Button(
-        label="Purchase Robux", style=discord.ButtonStyle.blurple, emoji="hexagon",
-        custom_id="purchase_robux"
-    ))
-
-    await channel.send(embed=embed, view=view)
-    print("Info embed sent with BLUE border!")
-
-# --- PURCHASE FLOW: Step-by-Step ---
 class PurchaseFlow(discord.ui.View):
-    def __init__(self, user_id):
-        super().__init__(timeout=600)
+    def __init__(self, user_id, thread):
+        super().__init__(timeout=None)  # Persistent
         self.user_id = user_id
-        self.step = 1
+        self.thread = thread
         self.robux = 0
         self.price = 0.0
         self.method = ""
 
-    async def start(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        thread = await interaction.channel.create_thread(
-            name=f"Purchase-{interaction.user.name}",
-            auto_archive_duration=1440,
-            reason="Robux Purchase"
-        )
-        self.thread = thread
-        await thread.add_user(interaction.user)
-        await self.send_step()
-
-    async def send_step(self):
-        if self.step == 1:
+    async def send_step(self, step):
+        if step == 1:
             embed = discord.Embed(title="Would you like to start buying Robux? (1/5)", color=0x00A3FF)
-            embed.description = "Click **Yes** to begin your purchase."
-            view = discord.ui.View()
-            view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="yes1"))
-            view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="no1"))
+            embed.description = "Click **Yes** to begin."
+            view = discord.ui.View(timeout=None)
+            view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_1"))
+            view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_1"))
             await self.thread.send(embed=embed, view=view)
 
-        elif self.step == 2:
+        elif step == 2:
             embed = discord.Embed(title="How much Robux would you like to buy? (2/5)", color=0x00A3FF)
-            embed.description = (
-                "Please type the amount below.\n"
-                f"Example: `100000`\n"
-                "Minimum: **10,000** {EMOJI_ROBUX}"
-            )
+            embed.description = f"Type the amount below.\nExample: `100000`\nMinimum: **10,000** {EMOJI_ROBUX}"
             await self.thread.send(embed=embed)
 
-        elif self.step == 3:
-            # Calculate price
-            base_rate = 10000 / 10.0  # $10 per 10k
-            self.price = (self.robux / base_rate)
+        elif step == 3:
+            base_rate = 10000 / 10.0
+            self.price = self.robux / base_rate
             for deal in deals_data["deals"]:
                 if self.robux == deal["amount"]:
                     self.price = deal["new"]
                     break
-
-            embed = discord.Embed(title="Confirm Your Purchase (3/5)", color=0x00A3FF)
+            embed = discord.Embed(title="Confirm Purchase (3/5)", color=0x00A3FF)
             embed.description = (
-                f"Are you sure you want to buy **{self.robux:,}** {EMOJI_ROBUX}?\n\n"
+                f"**{self.robux:,}** {EMOJI_ROBUX}\n"
                 f"**Price:** `${self.price:.2f}`"
             )
             if self.price < (self.robux / base_rate):
-                embed.description += " (Special Deal!)"
-            view = discord.ui.View()
-            view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="yes3"))
-            view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="no3"))
+                embed.description += " **(Winter Deal!)**"
+            view = discord.ui.View(timeout=None)
+            view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_3"))
+            view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_3"))
             await self.thread.send(embed=embed, view=view)
 
-        elif self.step == 4:
+        elif step == 4:
             embed = discord.Embed(title="Select Payment Method (4/5)", color=0x00A3FF)
-            embed.description = "Choose your preferred payment option."
+            embed.description = "Choose your payment option."
             select = discord.ui.Select(
-                placeholder="Select payment method",
+                placeholder="Select method",
+                custom_id="payment_select",
                 options=[
                     discord.SelectOption(label="Visa Gift Card (G2A)", value="visa", emoji="credit_card"),
                     discord.SelectOption(label="PayPal (Eneba)", value="paypal", emoji="money_with_wings"),
@@ -171,17 +132,17 @@ class PurchaseFlow(discord.ui.View):
                 ]
             )
             select.callback = self.select_callback
-            view = discord.ui.View()
+            view = discord.ui.View(timeout=None)
             view.add_item(select)
             await self.thread.send(embed=embed, view=view)
 
-        elif self.step == 5:
+        elif step == 5:
             embed = discord.Embed(title="Payment Invoice (5/5)", color=0x00A3FF)
             if "visa" in self.method:
                 embed.description = (
-                    "Please purchase a **Rewarble Visa Gift Card** for the exact amount.\n"
-                    f"**Amount:** `${self.price:.2f}`\n\n"
-                    "After purchase, reply with the **gift card code**."
+                    "Purchase a **Rewarble Visa Gift Card** for:\n"
+                    f"**`${self.price:.2f}`**\n\n"
+                    "Reply with the **gift card code**."
                 )
             else:
                 embed.description = f"Send **${self.price:.2f}** to the address provided by staff."
@@ -190,10 +151,9 @@ class PurchaseFlow(discord.ui.View):
     async def select_callback(self, interaction: discord.Interaction):
         self.method = interaction.data["values"][0]
         await interaction.response.defer()
-        self.step = 5
-        await self.send_step()
+        await self.send_step(5)
 
-# --- BUTTON CALLBACKS ---
+# --- INTERACTION HANDLER ---
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
     if not interaction.data or "custom_id" not in interaction.data:
@@ -201,46 +161,43 @@ async def on_interaction(interaction: discord.Interaction):
 
     cid = interaction.data["custom_id"]
 
-    if cid == "purchase_robux":
-        flow = PurchaseFlow(interaction.user.id)
-        await flow.start(interaction)
+    if cid == "purchase_robux_btn":
+        # Handled in PurchaseButton
+        pass
 
-    elif cid.startswith("yes1"):
-        flow = PurchaseFlow(interaction.user.id)
+    elif cid == "flow_yes_1":
+        flow = PurchaseFlow(interaction.user.id, interaction.channel)
         await interaction.response.defer()
-        flow.step = 2
-        flow.thread = interaction.channel
-        await flow.send_step()
+        await flow.send_step(2)
 
-    elif cid.startswith("yes3"):
-        flow = PurchaseFlow(interaction.user.id)
+    elif cid == "flow_yes_3":
+        flow = PurchaseFlow(interaction.user.id, interaction.channel)
         await interaction.response.defer()
-        flow.step = 4
-        flow.thread = interaction.channel
-        await flow.send_step()
+        await flow.send_step(4)
 
-    elif cid.startswith("no"):
+    elif cid in ["flow_no_1", "flow_no_3"]:
         await interaction.response.send_message("Purchase cancelled.", ephemeral=True)
 
-# --- MESSAGE HANDLER: Step 2 Input ---
+    elif cid == "payment_select":
+        # Handled in PurchaseFlow
+        pass
+
+# --- MESSAGE INPUT: Robux Amount ---
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not message.channel.name.startswith("Purchase-"):
         return await bot.process_commands(message)
 
-    # Step 2: Robux amount
-    if re.fullmatch(r"\d{5,}", message.content):
+    if re.fullmatch(r"\d{5,}", message.content.strip()):
         try:
-            amount = int(message.content.replace(",", ""))
+            amount = int(message.content.replace(",", "").strip())
             if amount < 10000:
-                await message.reply("Minimum order is **10,000** Robux.")
+                await message.reply("Minimum is **10,000** Robux.")
                 return
-            flow = PurchaseFlow(message.author.id)
+            flow = PurchaseFlow(message.author.id, message.channel)
             flow.robux = amount
-            flow.step = 3
-            flow.thread = message.channel
-            await flow.send_step()
             await message.delete()
+            await flow.send_step(3)
         except:
             pass
     await bot.process_commands(message)
@@ -249,60 +206,86 @@ async def on_message(message: discord.Message):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def panel(ctx):
-    embed = discord.Embed(title="Winter Deals Panel", color=0x00A3FF)
-    embed.description = (
-        "Edit your **Winter Specials** below.\n"
-        "Use the fields to update title, emoji, and prices."
-    )
     modal = WinterDealsModal()
-    await ctx.send(embed=embed, view=discord.ui.View().add_item(discord.ui.Button(label="Edit Deals", style=discord.ButtonStyle.blurple, custom_id="open_modal")))
-    # Modal handled below
+    await ctx.send("Click below to edit Winter Deals.", view=discord.ui.View().add_item(
+        discord.ui.Button(label="Edit Deals", style=discord.ButtonStyle.blurple, custom_id="open_deals_modal")
+    ))
 
 class WinterDealsModal(discord.ui.Modal, title="Edit Winter Deals"):
-    title_input = discord.ui.TextInput(label="Deal Title", default=deals_data["title"])
-    emoji_input = discord.ui.TextInput(label="Emoji (name or ID)", default=deals_data["emoji"])
-    deal1 = discord.ui.TextInput(label="50k: Old $ / New $", placeholder="49.99 / 25.00")
-    deal2 = discord.ui.TextInput(label="75k: Old $ / New $", placeholder="74.99 / 35.00")
-    deal3 = discord.ui.TextInput(label="100k: Old $ / New $", placeholder="99.99 / 40.00")
-    deal4 = discord.ui.TextInput(label="150k: Old $ / New $", placeholder="149.99 / 55.00")
-    deal5 = discord.ui.TextInput(label="250k: Old $ / New $", placeholder="249.99 / 75.00")
+    title_input = discord.ui.Text include = discord.ui.TextInput(label="Title", default=deals_data.get("title", "WINTER DEALS"))
+    emoji_input = discord.ui.TextInput(label="Emoji", default=deals_data.get("emoji", "snowflake"))
+    deal1 = discord.ui.TextInput(label="50k: Old/New", placeholder="49.99 / 25.00", default="49.99 / 25.00")
+    deal2 = discord.ui.TextInput(label="75k: Old/New", placeholder="74.99 / 35.00", default="74.99 / 35.00")
+    deal3 = discord.ui.TextInput(label="100k: Old/New", placeholder="99.99 / 40.00", default="99.99 / 40.00")
+    deal4 = discord.ui.TextInput(label="150k: Old/New", placeholder="149.99 / 55.00", default="149.99 / 55.00")
+    deal5 = discord.ui.TextInput(label="250k: Old/New", placeholder="249.99 / 75.00", default="249.99 / 75.00")
 
     async def on_submit(self, interaction: discord.Interaction):
         global deals_data
         deals_data["title"] = self.title_input.value
         deals_data["emoji"] = self.emoji_input.value
-        deals = [self.deal1.value, self.deal2.value, self.deal3.value, self.deal4.value, self.deal5.value]
+
         new_deals = []
-        for i, d in enumerate(deals):
+        inputs = [self.deal1, self.deal2, self.deal3, self.deal4, self.deal5]
+        amounts = [50000, 75000, 100000, 150000, 250000]
+        for inp, amt in zip(inputs, amounts):
             try:
-                old, new = map(float, d.split("/"))
-                amount = [50000,75000,100000,150000,250000][i]
-                new_deals.append({"amount": amount, "old": old, "new": new})
+                old, new = map(float, [x.strip() for x in inp.value.split("/")])
+                new_deals.append({"amount": amt, "old": old, "new": new})
             except:
                 pass
         deals_data["deals"] = new_deals
         save_deals(deals_data)
 
-        # Post updated deals
         channel = bot.get_channel(DEALS_CHANNEL_ID)
         if channel:
             emoji = deals_data["emoji"]
             if emoji.isdigit():
-                emoji = f"<:emoji:{emoji}>"
+                emoji = f"<:e:{emoji}>"
             embed = discord.Embed(title=f"{emoji} {deals_data['title']} {emoji}", color=0x00A3FF)
-            embed.description = f"{deals_data['mention']}\nGet your {EMOJI_ROBUX} stacked this season!\n\n"
+            embed.description = f"{deals_data.get('mention', '@everyone')}\nGet your {EMOJI_ROBUX} stacked!\n\n"
             for d in deals_data["deals"]:
                 embed.description += f"{emoji} **{d['amount']:,}** {EMOJI_ROBUX} → ~~${d['old']:.2f}~~ **${d['new']:.2f}**\n"
-            embed.description += f"{emoji} Don’t miss out — #WinterDeals won’t last forever!\n➡️ Buy now at <#{INFO_CHANNEL_ID}> ⬅️"
+            embed.description += f"{emoji} Don’t miss out!\nBuy at <#{INFO_CHANNEL_ID}>"
             await channel.send(embed=embed)
 
-        await interaction.response.send_message("Winter Deals updated!", ephemeral=True)
+        await interaction.response.send_message("Deals updated!", ephemeral=True)
+
+# --- INFO EMBED ---
+async def send_info_embed():
+    channel = bot.get_channel(INFO_CHANNEL_ID)
+    if not channel:
+        print("Info channel not found!")
+        return
+
+    embed = discord.Embed(color=0x00A3FF)
+    embed.set_author(name="Robux Town™", icon_url="https://i.imgur.com/ROBUXTOWN.png")
+    embed.description = (
+        "lock **Automated Purchase**\n"
+        "Secure, instant Robux delivery via Discord.\n\n"
+        "zap **Under 60 Seconds**\n"
+        "Robux delivered instantly after payment.\n\n"
+        "credit_card **Smart Payments**\n"
+        "Fully automated — no delays.\n\n"
+        "shield **Bank-Level Security**\n"
+        "Encrypted & verified transactions.\n\n"
+        "globe_with_meridians **Payment Options**\n"
+        "• **Visa Gift Card (G2A)**\n"
+        "• **PayPal (Eneba)**\n"
+        "• **BTC • LTC • SOL • ETH**"
+    )
+    embed.set_image(url="https://i.imgur.com/ROBUXTOWNBANNER.png")
+
+    view = PurchaseButton()
+    await channel.send(embed=embed, view=view)
+    print("Info embed sent (BLUE BORDER)")
 
 # --- STARTUP ---
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    bot.add_view(PurchaseFlow(0))  # persistent view
+    bot.add_view(PurchaseButton())
+    bot.add_view(PurchaseFlow(0, None))  # dummy for persistence
     await send_info_embed()
 
 # --- RUN ---
