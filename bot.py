@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINALIZED UI + LIVE PRICES + ADMIN PANEL + PRICE LIST (Link Fix)
+# Robux Town™ – FINALIZED UI + LIVE PRICES + ADMIN PANEL + PRICE LIST + INFO EMBEDS
 import os
 import asyncio
 import json
@@ -11,10 +11,11 @@ import requests
 import discord
 from discord.ext import commands, tasks
 
-# --- Rewarble Links (MOVED TO TOP TO FIX NameError) ---
+# --- Rewarble Links (Defined at the top for easy access) ---
 ENEBA_REWARBLE_LINK = "https://www.eneba.com/rewarble-rewarble-visa-10-usd-voucher-global"
 G2A_REWARBLE_LINK = "https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewarble-key-global-i10000502992001?suid=960beb55-4797-46d5-b14c-94995fd68f31"
 # --------------------------------------------------------
+
 
 # -------------------------------------------------
 # CONFIG
@@ -34,13 +35,17 @@ intents.members = True
 bot = commands.Bot(command_prefix="+", intents=intents, help_command=None)
 
 # Channels (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
-INFO_CHANNEL_ID      = 1435516058105675818 # Main buy channel (Where persistent button is)
-PRICE_CHANNEL_ID     = 1435516058105675817 # Channel for the price list embed
-ORDER_LOG_CHANNEL_ID = 1435516057845497981 # Channel for placing the order (pre-completion)
-COMPLETED_CHANNEL_ID = 1435516058286035015 # Channel for completed orders
-LOG_CHANNEL_ID       = 1435516058286035020 # Staff payment submission log
-STAFF_ROLE_ID        = 1435516057526734991 
-STAFF_DM_IDS         = [1422665161466187976,1269145029943758899] 
+INFO_CHANNEL_ID           = 1435516058105675818 # Main buy channel (Where persistent button is)
+PRICE_CHANNEL_ID          = 1435516058105675817 # Channel for the price list embed
+ORDER_LOG_CHANNEL_ID      = 1435516057845497981 # Channel for placing the order (pre-completion)
+COMPLETED_CHANNEL_ID      = 1435516058286035015 # Channel for completed orders
+LOG_CHANNEL_ID            = 1435516058286035020 # Staff payment submission log
+STAFF_ROLE_ID             = 1435516057526734991 
+STAFF_DM_IDS              = [1422665161466187976,1269145029943758899] 
+
+PAYMENT_METHOD_CHANNEL_ID = 1435516058105675820 # <-- NEW: Channel for Payment Methods
+TOS_CHANNEL_ID            = 1435516058286035016 # <-- NEW: Channel for Terms of Service 
+
 
 # EMOJIS (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
@@ -530,6 +535,14 @@ async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: 
         await interaction.response.defer(ephemeral=True)
         await send_info_embed(force_new=True)
         await interaction.followup.send(f"{EMOJI_VERIFIED} New Info Embed sent to the main channel.", ephemeral=True)
+    elif cid == "admin_set_payments":
+        await interaction.response.defer(ephemeral=True)
+        await send_payment_methods_embed(force_new=True)
+        await interaction.followup.send(f"{EMOJI_VERIFIED} Payment Methods embed sent to the payment channel.", ephemeral=True)
+    elif cid == "admin_set_tos":
+        await interaction.response.defer(ephemeral=True)
+        await send_tos_embed(force_new=True)
+        await interaction.followup.send(f"{EMOJI_VERIFIED} ToS embed sent to the ToS channel.", ephemeral=True)
 # -------------------------------------------------------------------------
 
 
@@ -555,6 +568,14 @@ class AdminPanel(discord.ui.View):
     @discord.ui.button(label="Update Price List", style=discord.ButtonStyle.green, custom_id="admin_set_prices", emoji=EMOJI_ROBUX)
     async def set_prices_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_set_prices")
+
+    @discord.ui.button(label="Update Payments", style=discord.ButtonStyle.secondary, custom_id="admin_set_payments", emoji="💳")
+    async def set_payments_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_set_payments")
+
+    @discord.ui.button(label="Update ToS", style=discord.ButtonStyle.secondary, custom_id="admin_set_tos", emoji="📜")
+    async def set_tos_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_set_tos")
 
     @discord.ui.button(label="Reset Info Embed", style=discord.ButtonStyle.red, custom_id="admin_reset_embed", emoji="🔄")
     async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -766,6 +787,94 @@ async def send_info_embed(force_new: bool = False):
     print("Info embed sent (BLUE BORDER)")
 
 # -------------------------------------------------
+# TERMS OF SERVICE EMBED (NEW)
+# -------------------------------------------------
+async def send_tos_embed(force_new: bool = False):
+    channel = bot.get_channel(TOS_CHANNEL_ID)
+    if not channel:
+        print("ToS channel not found!")
+        return
+    
+    if not force_new:
+        try:
+            if [m async for m in channel.history(limit=1)]: return
+        except: pass
+
+    embed = discord.Embed(
+        title="📜 Robux Town Terms of Service",
+        description="By using our services, you agree to the following terms:",
+        color=0x404040
+    )
+
+    embed.add_field(
+        name="1. Delivery and Tax",
+        value="All Robux is delivered via Gamepass. Roblox takes a 30% tax, which is calculated into your final price.",
+        inline=False
+    )
+    embed.add_field(
+        name="2. Refunds",
+        value="Refunds are **not guaranteed** after payment submission. Disputes may result in a permanent ban.",
+        inline=False
+    )
+    embed.add_field(
+        name="3. Safety",
+        value="We guarantee **zero bans** related to our service. Your account safety is our priority.",
+        inline=False
+    )
+    embed.set_footer(text="Last Updated: November 2025")
+
+    await channel.send(embed=embed)
+    print("ToS embed sent.")
+
+# -------------------------------------------------
+# PAYMENT METHODS EMBED (NEW)
+# -------------------------------------------------
+async def send_payment_methods_embed(force_new: bool = False):
+    channel = bot.get_channel(PAYMENT_METHOD_CHANNEL_ID)
+    if not channel:
+        print("Payment Method channel not found!")
+        return
+
+    if not force_new:
+        try:
+            if [m async for m in channel.history(limit=1)]: return
+        except: pass
+    
+    embed = discord.Embed(
+        title="💳 Accepted Payment Methods",
+        description="We offer fully automated payment processing for instant Robux delivery.",
+        color=0x00A3FF
+    )
+    
+    embed.add_field(
+        name=f"1. {EMOJI_CRYPTO} Cryptocurrency",
+        value="**Instant Confirmation:** Bitcoin (BTC), Litecoin (LTC), Ethereum (ETH), Solana (SOL).",
+        inline=False
+    )
+    
+    embed.add_field(
+        name=f"2. {EMOJI_CARD} Card (via G2A Rewarble)",
+        value=f"Purchase a **Rewarble Card on G2A** and submit the code. [G2A Link]({G2A_REWARBLE_LINK})",
+        inline=False
+    )
+    
+    embed.add_field(
+        name=f"3. {EMOJI_PAYPAL} PayPal (via Eneba Rewarble)",
+        value=f"Purchase a **Rewarble Card on Eneba** using PayPal/Card and submit the code. [Eneba Link]({ENEBA_REWARBLE_LINK})",
+        inline=False
+    )
+    
+    embed.add_field(
+        name=f"4. {EMOJI_PAYMENT_SUPPORT} Giftcards",
+        value="We accept various gift cards on request. Please start a purchase flow to see current accepted gift cards.",
+        inline=False
+    )
+
+    await channel.send(embed=embed)
+    print("Payment Methods embed sent.")
+
+
+# -------------------------------------------------
 # STARTUP
 # -------------------------------------------------
 @bot.event
@@ -775,9 +884,11 @@ async def on_ready():
     # Add persistent view back in case of bot restart
     bot.add_view(PersistentPurchaseButton())
     
-    # Ensure the info embed is present and up-to-date
+    # Ensure the info embeds are present and up-to-date
     await send_info_embed()
-    await send_price_embed() # Send the price embed on startup
+    await send_price_embed() 
+    await send_payment_methods_embed() # <-- NEW: Send Payment Methods
+    await send_tos_embed()             # <-- NEW: Send ToS
     
 
 # -------------------------------------------------
