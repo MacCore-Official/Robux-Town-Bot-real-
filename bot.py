@@ -5,7 +5,7 @@ import asyncio
 import json
 import re
 import random
-import time # Added for Order ID generation
+import time 
 from datetime import datetime
 import requests
 import discord
@@ -50,10 +50,10 @@ EMOJI_PAYPAL         = "<:PayPal:1435526543513354354>"
 EMOJI_PAYMENT_SUPPORT= "<:PAYMENT_SUPPORT:1435526984011874434>"
 EMOJI_COG            = "⚙️"
 EMOJI_CRYPTO         = "<:Crypto:1437309415551406222>" # Assuming this is a general crypto icon
-EMOJI_USER           = "👤" # Added user icon
-EMOJI_USD            = "💶" # Using Euro emoji for USD display in the screenshot
-EMOJI_RATING         = "⭐" # Rating star
-EMOJI_ORDER_ID       = "📄" # Order ID icon
+EMOJI_USER           = "👤" 
+EMOJI_USD            = "💶" 
+EMOJI_RATING         = "⭐" 
+EMOJI_ORDER_ID       = "📄" 
 
 # -------------------------------------------------
 # PRICE CALCULATION (FIXED THE MISSING FUNCTION)
@@ -80,10 +80,10 @@ default_config = {
         "sol": "HvXxk4xPYScvQdEQPyDSF4PP2SdTiJzHtxR4qKLdtJ2K"
     },
     "qr_urls": {
-        "btc": "",
-        "ltc": "",
-        "eth": "",
-        "sol": ""
+        "btc": "https://i.ibb.co/TMCF8r85/Screenshot-2025-11-10-at-6-28-08-PM.png",
+        "ltc": "https://i.ibb.co/zhbtHyRp/Screenshot-2025-11-10-at-6-28-58-PM.png",
+        "eth": "https://i.ibb.co/67YFkD4h/Screenshot-2025-11-10-at-6-29-33-PM.png",
+        "sol": "https://i.ibb.co/XfDB2z1b/Screenshot-2025-11-10-at-6-30-02-PM.png"
     }
 }
 
@@ -94,7 +94,6 @@ def load_config():
             with open(CONFIG_FILE, "r") as f:
                 loaded_data = json.load(f)
                 # Merge loaded data with default config to ensure all keys exist
-                # This prevents the KeyError if config.json is empty/corrupted
                 config_data = default_config.copy()
                 config_data.update(loaded_data)
                 return config_data
@@ -306,7 +305,7 @@ class PurchaseFlow(discord.ui.View):
 
         # Checking embed
         check_embed = discord.Embed(title="Checking For Transactions", color=0x00A3FF)
-        check_embed.description = f"<a:Loading:1435526855523434576> We are actively monitoring transactions. Please proceed with your payment to complete the transaction process."
+        check_embed.description = f"{EMOJI_LOADING} We are actively monitoring transactions. Please proceed with your payment to complete the transaction process."
         await interaction.followup.send(embed=check_embed)
 
     async def send_payment_invoice(self, interaction: discord.Interaction):
@@ -366,8 +365,9 @@ async def on_interaction(interaction: discord.Interaction):
         await interaction.response.send_modal(modal)
 
     # --- ADMIN PANEL BUTTONS ---
+    # Delegated interaction handling to AdminPanel callbacks (which call the handler)
     elif cid.startswith("admin_"):
-        await handle_admin_panel_interaction(interaction, cid)
+        pass # The button callback handles the execution of handle_admin_panel_interaction
     
     # Process commands if it was a message interaction that bypassed on_message
     await bot.process_commands(interaction.message)
@@ -399,13 +399,12 @@ async def on_message(message: discord.Message):
             else:
                  await bot.process_commands(message) # If not a flow-related message, check for commands
         except ValueError:
-             # This handles cases where the regex matches, but int conversion fails (shouldn't happen with the regex)
              await bot.process_commands(message)
     else:
         await bot.process_commands(message)
 
 # -------------------------------------------------
-# STAFF ADMIN PANEL COMMANDS (Keep this logic here)
+# STAFF ADMIN PANEL COMMANDS 
 # -------------------------------------------------
 def is_staff():
     async def predicate(ctx):
@@ -423,22 +422,29 @@ async def admin_panel(ctx):
         description="Select an action to manage bot settings or trigger automated events.",
         color=discord.Color.blue()
     )
+    # Acknowledging the command implicitly by sending a message (ephemeral=True)
     await ctx.send(embed=embed, view=AdminPanel(), ephemeral=True)
 
+# --- CENTRALIZED HANDLER FOR ADMIN BUTTONS (Acknowledges interaction) ---
 async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: str):
-    # Need to define this wrapper function for the AdminPanel buttons to work correctly
     if cid == "admin_set_address":
+        # Acknowledge by sending the Modal (send_modal acknowledges immediately)
         await interaction.response.send_modal(AddressModal())
     elif cid == "admin_set_qr":
+        # Acknowledge by sending the Modal
         await interaction.response.send_modal(QRModal())
     elif cid == "admin_fake_order":
-        await interaction.response.defer(ephemeral=True)
+        # Acknowledge by deferring, then follow up
+        await interaction.response.defer(ephemeral=True) 
         await fake_order_loop()
         await interaction.followup.send(f"{EMOJI_VERIFIED} Fake order triggered to the log channels.", ephemeral=True)
     elif cid == "admin_reset_embed":
+        # Acknowledge by deferring, then follow up
         await interaction.response.defer(ephemeral=True)
         await send_info_embed(force_new=True)
         await interaction.followup.send(f"{EMOJI_VERIFIED} New Info Embed sent to the main channel.", ephemeral=True)
+# -------------------------------------------------------------------------
+
 
 # -------------------------------------------------
 # ADMIN PANEL VIEW (The Interactive Menu)
@@ -447,6 +453,7 @@ class AdminPanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300) 
 
+    # FIX: These buttons now only call the handler, which contains the single acknowledgement.
     @discord.ui.button(label="Set Crypto Address", style=discord.ButtonStyle.blurple, custom_id="admin_set_address", emoji=EMOJI_CRYPTO)
     async def set_address_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_set_address")
@@ -467,7 +474,6 @@ class AdminPanel(discord.ui.View):
 # ADMIN PANEL MODALS (For Crypto Settings)
 # -------------------------------------------------
 class AddressModal(discord.ui.Modal):
-    # ... (Modal code remains the same as before)
     def __init__(self):
         super().__init__(title="Set Crypto Address", timeout=600)
         self.coin = discord.ui.TextInput(label="Coin (btc, ltc, eth, sol)", placeholder="e.g., btc", max_length=3)
@@ -487,7 +493,6 @@ class AddressModal(discord.ui.Modal):
             await interaction.response.send_message(f"{EMOJI_WARNING} Invalid coin specified. Must be one of: `btc`, `ltc`, `eth`, `sol`.", ephemeral=True)
 
 class QRModal(discord.ui.Modal):
-    # ... (Modal code remains the same as before)
     def __init__(self):
         super().__init__(title="Set Crypto QR URL", timeout=600)
         self.coin = discord.ui.TextInput(label="Coin (btc, ltc, eth, sol)", placeholder="e.g., btc", max_length=3)
@@ -546,23 +551,20 @@ async def send_completed_order(amount, price, method):
     # Generate a plausible Order ID (current Unix timestamp + random sequence)
     order_id = str(int(time.time() * 1000))[4:] + str(random.randint(100, 999)) 
     
-    # Simulate a user (e.g., "Hidden" or a random name, using Hidden for the screenshot match)
     user_name = "Hidden" 
-    
-    # Simulate rating (always 4/5 for consistency)
     rating_stars = "⭐⭐⭐⭐ (4/5)" 
     
-    embed = discord.Embed(title=f"{EMOJI_VERIFIED} New Completed Order", color=0x38B750) # Use a green color for success
+    embed = discord.Embed(title=f"✅ New Completed Order", color=0x38B750) # Use a green color for success
     
-    # Set the thumbnail image from the screenshot (assuming a placeholder URL)
-    embed.set_thumbnail(url="https://i.imgur.com/ROBUX_WORLD_THUMBNAIL.png") # Placeholder image URL
+    # Placeholder for the Robux World image
+    embed.set_thumbnail(url="https://i.imgur.com/ROBUX_WORLD_THUMBNAIL.png") 
 
     # Field 1 (User / Payment Method)
     embed.add_field(name=f"{EMOJI_USER} User", value=f"**{user_name}**", inline=True)
     embed.add_field(name="💳 Payment Method", value=f"**{method}**", inline=True)
     
     # Field 2 (Robux Purchased / USD Spent)
-    embed.add_field(name=f"{EMOJI_ROBUX} Robux Purchased", value=f"**{amount:,} Robux**", inline=False) # Not inline with the next field
+    embed.add_field(name=f"{EMOJI_ROBUX} Robux Purchased", value=f"**{amount:,} Robux**", inline=False) 
     embed.add_field(name=f"{EMOJI_USD} USD Spent", value=f"**${price:.2f}**", inline=True)
     embed.add_field(name=f"{EMOJI_RATING} Rating", value=rating_stars, inline=True)
     
@@ -570,6 +572,8 @@ async def send_completed_order(amount, price, method):
     embed.add_field(name=f"{EMOJI_ORDER_ID} Order ID", value=f"`{order_id}`", inline=False)
     
     # Footer (Matching screenshot format)
+    # The current time uses NZDT, but Discord displays times in UTC in the footer.
+    # The time is dynamically generated, so it will be accurate when run.
     embed.set_footer(text=f"Powered by Robux Town • discord.gg/robuxtown • {datetime.now().strftime('%B %d, %Y at %H:%M UTC')} ")
     
     await channel.send(embed=embed)
