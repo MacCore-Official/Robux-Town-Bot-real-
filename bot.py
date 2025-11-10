@@ -39,7 +39,7 @@ STAFF_DM_IDS         = [1422665161466187976,1269145029943758899] # Your user ID 
 # EMOJIS (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
 EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
-EMOJI_LOADING        = "<a:Loading:1435526855523434576>"
+EMOJI_LOADING        = "<:Loading:1435526855523434576>"
 EMOJI_WARNING        = "<:warning:1435526954689495091>"
 EMOJI_BITCOIN        = "<:Bitcoin:1435526466527039579>"
 EMOJI_LITECOIN       = "<:Litecoin:1435526448684339321>"
@@ -54,7 +54,7 @@ EMOJI_USER           = "👤"
 EMOJI_USD            = "💶" 
 EMOJI_RATING         = "⭐" 
 EMOJI_ORDER_ID       = "📄" 
-EMOJI_LOCK           = "🔒" # Added lock emoji for close ticket
+EMOJI_LOCK           = "🔒" 
 
 # -------------------------------------------------
 # PRICE CALCULATION (FIXED THE MISSING FUNCTION)
@@ -207,7 +207,7 @@ class CloseTicketView(discord.ui.View):
 # -------------------------------------------------
 async def send_disclaimer_embed(thread: discord.Thread):
     embed = discord.Embed(
-        title="<:warning:1435526954689495091> Please Note",
+        title="⚠️ Please Note",
         description=(
             "**Please make sure that all conversations related to the deal are done within this ticket.** Failing to do so may put you at risk of being scammed.\n\n"
             "Our staff will **never DM you** regarding any deals that are active or have already been completed."
@@ -357,9 +357,15 @@ class PurchaseFlow(discord.ui.View):
         
         details = ""
         if self.method == "card":
-             details = "**You must purchase a Rewarble Card from G2A** for the amount and submit the code."
+             details = (
+                 "**You must purchase a Rewarble Card from G2A** for the amount and submit the code.\n"
+                 "**G2A Link:** [Buy Rewarble Card Here](https://g2a.com/your-rewarble-link)" # Placeholder link
+             )
         elif self.method == "paypal":
-             details = "**You must purchase a Rewarble Card from Eneba** for the amount and submit the code."
+             details = (
+                 "**You must purchase a Rewarble Card from Eneba** for the amount and submit the code.\n"
+                 "**Eneba Link:** [Buy Rewarble Card Here](https://eneba.com/your-rewarble-link)" # Placeholder link
+             )
         else: # Giftcard
              details = "Please purchase the necessary giftcard and prepare to submit the code/details."
              
@@ -500,7 +506,6 @@ class AdminPanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300) 
 
-    # FIX: These buttons now only call the handler, which contains the single acknowledgement.
     @discord.ui.button(label="Set Crypto Address", style=discord.ButtonStyle.blurple, custom_id="admin_set_address", emoji=EMOJI_CRYPTO)
     async def set_address_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_set_address")
@@ -711,11 +716,8 @@ async def on_ready():
     
     # Add persistent view back in case of bot restart
     bot.add_view(PersistentPurchaseButton())
-    # Add the CloseTicketView back for persistence
-    # NOTE: Since CloseTicketView uses the thread ID in its constructor, 
-    # we can't reliably re-add it here without tracking active thread IDs. 
-    # It will only work during a single bot uptime.
-
+    
+    # Ensure the info embed is present and up-to-date
     await send_info_embed()
     
     if not fake_order_loop.is_running():
