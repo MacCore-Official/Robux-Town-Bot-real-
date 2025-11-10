@@ -207,7 +207,7 @@ class CloseTicketView(discord.ui.View):
 # -------------------------------------------------
 async def send_disclaimer_embed(thread: discord.Thread):
     embed = discord.Embed(
-        title="⚠️ Please Note",
+        title="<:warning:1435526954689495091> Please Note",
         description=(
             "**Please make sure that all conversations related to the deal are done within this ticket.** Failing to do so may put you at risk of being scammed.\n\n"
             "Our staff will **never DM you** regarding any deals that are active or have already been completed."
