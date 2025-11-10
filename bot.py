@@ -366,6 +366,26 @@ async def deal(ctx, amount: int, old: float, new: float):
     await ctx.send(f"{EMOJI_VERIFIED} Added deal.")
 
 # -------------------------------------------------
+# PERSISTENT PURCHASE BUTTON (FIXED)
+# -------------------------------------------------
+class PersistentPurchaseButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)  # REQUIRED
+
+    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.blurple, custom_id="purchase_robux_btn")
+    async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        thread = await interaction.channel.create_thread(
+            name=f"Purchase-{interaction.user.name}-{random.randint(1000,9999)}",
+            auto_archive_duration=1440
+        )
+        await thread.add_user(interaction.user)
+        flow = PurchaseFlow(interaction.user.id, thread)
+        active_flows[interaction.user.id] = flow
+        await flow.send_step(1)
+        await interaction.followup.send("Purchase started! Check your thread.", ephemeral=True)
+
+# -------------------------------------------------
 # STARTUP
 # -------------------------------------------------
 @bot.event
