@@ -28,33 +28,33 @@ intents.members = True
 bot = commands.Bot(command_prefix="+", intents=intents, help_command=None)
 
 # Channels (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
-INFO_CHANNEL_ID      = 1111111111111111111 # E.g., main buy channel
-ORDER_LOG_CHANNEL_ID = 1111111111111111112 # E.g., fake order log
-COMPLETED_CHANNEL_ID = 1111111111111111113 # E.g., completed order log
-LOG_CHANNEL_ID       = 1111111111111111114 # E.g., staff payment submission log
-STAFF_ROLE_ID        = 1111111111111111115 # Role required for staff commands
-STAFF_DM_IDS         = [1234567890123456789] # Your user ID and other staff IDs
+INFO_CHANNEL_ID      = 1435516058105675818 # E.g., main buy channel
+ORDER_LOG_CHANNEL_ID = 1435516058286035015 # E.g., fake order log
+COMPLETED_CHANNEL_ID = 1435516058286035015 # E.g., completed order log
+LOG_CHANNEL_ID       = 1435516058286035020 # E.g., staff payment submission log
+STAFF_ROLE_ID        = 1435516057526734991 # Role required for staff commands
+STAFF_DM_IDS         = [1422665161466187976,1269145029943758899] # Your user ID and other staff IDs
 
 # EMOJIS (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
-EMOJI_ROBUX          = "<:Robux:1111111111111111116>"
-EMOJI_VERIFIED       = "<:Verified:1111111111111111117>"
-EMOJI_LOADING        = "<:Loading:1111111111111111118>"
-EMOJI_WARNING        = "<:warning:1111111111111111119>"
-EMOJI_BITCOIN        = "<:Bitcoin:1111111111111111120>"
-EMOJI_LITECOIN       = "<:Litecoin:1111111111111111121>"
-EMOJI_ETHEREUM       = "<:Ethereum:1111111111111111122>"
-EMOJI_SOLANA         = "<:Solana:1111111111111111123>"
-EMOJI_CARD           = "<:Card:1111111111111111124>"
-EMOJI_PAYPAL         = "<:PayPal:1111111111111111125>"
-EMOJI_PAYMENT_SUPPORT= "<:PAYMENT_SUPPORT:1111111111111111126>"
+EMOJI_ROBUX       = "<:Robux:1435526693472178176>"
+EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
+EMOJI_LOADING        = "<:Loading:1435526855523434576>"
+EMOJI_WARNING        = "<:warning:1435526954689495091>"
+EMOJI_BITCOIN        = "<:Bitcoin:1435526466527039579>"
+EMOJI_LITECOIN       = "<:Litecoin:1435526448684339321>"
+EMOJI_ETHEREUM       = "<:Ethereum:1435526479126597745>"
+EMOJI_SOLANA         = "<:Solana:1435526514115350549>"
+EMOJI_CARD           = "<:Card:1435526554783318047>"
+EMOJI_PAYPAL         = "<:PayPal:1435526543513354354>"
+EMOJI_PAYMENT_SUPPORT= "<:PAYMENT_SUPPORT:1435526984011874434>"
 EMOJI_COG            = "⚙️"
-EMOJI_CRYPTO         = "🪙"
+EMOJI_CRYPTO         = "<:Crypto:1437309415551406222>"
 
 # -------------------------------------------------
 # PRICE CALCULATION (FIXED THE MISSING FUNCTION)
 # -------------------------------------------------
 # Define the rate for Robux in USD per 1,000 R$
-ROBUX_RATE_PER_1000 = 5.00 
+ROBUX_RATE_PER_1000 = 1.00
 
 def get_price(robux_amount: int) -> float:
     """Calculates the total USD price based on the Robux amount."""
@@ -71,10 +71,10 @@ CRYPTO_IDS = {"btc": "bitcoin", "ltc": "litecoin", "eth": "ethereum", "sol": "so
 CONFIG_FILE = "config.json"
 default_config = {
     "wallets": {
-        "btc": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-        "ltc": "Labc123xyz...",
-        "eth": "0x1234567890abcdef1234567890abcdef12345678",
-        "sol": "SoL123abc..."
+        "btc": "bc1qv5peyagvfup2k2j62xeawhzylar5ea7cn8usw6",
+        "ltc": "ltc1qqn5rv2fzkssc6shxqu3u2adzk9ult0jat9785j",
+        "eth": "0x11bd2A8Ce35BFE5DF02D67A9b6971f1910C68085",
+        "sol": "HvXxk4xPYScvQdEQPyDSF4PP2SdTiJzHtxR4qKLdtJ2K"
     },
     "qr_urls": {
         "btc": "",
