@@ -6,7 +6,7 @@ import json
 import re
 import random
 import time 
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 import discord
 from discord.ext import commands, tasks
@@ -39,7 +39,7 @@ STAFF_DM_IDS         = [1422665161466187976,1269145029943758899] # Your user ID 
 # EMOJIS (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
 EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
-EMOJI_LOADING        = "<a:Loading:1435526855523434576>"
+EMOJI_LOADING        = "<:Loading:1435526855523434576>"
 EMOJI_WARNING        = "<:warning:1435526954689495091>"
 EMOJI_BITCOIN        = "<:Bitcoin:1435526466527039579>"
 EMOJI_LITECOIN       = "<:Litecoin:1435526448684339321>"
@@ -57,7 +57,7 @@ EMOJI_ORDER_ID       = "📄"
 EMOJI_LOCK           = "🔒" 
 
 # -------------------------------------------------
-# PRICE CALCULATION (FIXED THE MISSING FUNCTION)
+# PRICE CALCULATION 
 # -------------------------------------------------
 # Define the rate for Robux in USD per 1,000 R$
 ROBUX_RATE_PER_1000 = 1.00
@@ -88,7 +88,6 @@ default_config = {
     }
 }
 
-# --- FIX: Ensure config dictionary is always valid on load ---
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -108,7 +107,6 @@ def save_config(data):
         json.dump(data, f, indent=2)
 
 config = load_config()
-# --- END FIX ---
 
 async def get_crypto_price(crypto: str) -> float:
     try:
@@ -332,10 +330,15 @@ class PurchaseFlow(discord.ui.View):
         if not qr_url or not qr_url.startswith("http"):
              qr_url = f"https://api.qrserver.com/v1/create-qr-code/?data={address}&size=200x200"
 
+        # --- UPDATED: Calculate expiry time (15 minutes from now) ---
+        expiry_time = datetime.now() + timedelta(minutes=15)
+        expiry_timestamp = int(expiry_time.timestamp())
+        
         embed = discord.Embed(title=f"{self.crypto.upper()} Payment Invoice (5/5)", color=0x00A3FF)
         embed.description = (
             f"This transaction is **${price_usd:.2f} USD**.\n"
-            f"Please send the **exact** amount of `{amount_coin:.8f}` {self.crypto.upper()} to the address below."
+            f"Please send the **exact** amount of `{amount_coin:.8f}` {self.crypto.upper()} to the address below.\n\n"
+            f"**Invoice Expires:** <t:{expiry_timestamp}:R> (<t:{expiry_timestamp}:T>)" # Discord timestamp formatting
         )
         embed.add_field(name="Payment Address", value=f"```\n{address}\n```", inline=False)
         embed.add_field(name=f"Amount ({self.crypto.upper()})", value=f"`{amount_coin:.8f}`", inline=False)
@@ -346,9 +349,12 @@ class PurchaseFlow(discord.ui.View):
         view.add_item(discord.ui.Button(label="Submit TX Hash", style=discord.ButtonStyle.blurple, custom_id="submit_tx"))
         await interaction.followup.send(embed=embed, view=view)
 
-        # Checking embed
+        # Checking embed is also updated with expiry time
         check_embed = discord.Embed(title="Checking For Transactions", color=0x00A3FF)
-        check_embed.description = f"{EMOJI_LOADING} We are actively monitoring transactions. Please proceed with your payment to complete the transaction process."
+        check_embed.description = (
+            f"{EMOJI_LOADING} We are actively monitoring transactions. Please proceed with your payment to complete the transaction process.\n"
+            f"This invoice will expire <t:{expiry_timestamp}:R>."
+        )
         await interaction.followup.send(embed=check_embed)
 
     async def send_payment_invoice(self, interaction: discord.Interaction):
@@ -358,13 +364,13 @@ class PurchaseFlow(discord.ui.View):
         details = ""
         if self.method == "card":
              details = (
-                 "**You must purchase a Rewarble Card from G2A** for the amount and submit the code. You are allowed to stack codes and make sure you buy the correct ammount\n"
-                 "**G2A Link:** [Buy Rewarble Card Here](https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewarble-key-global-i10000502992001?suid=960beb55-4797-46d5-b14c-94995fd68f31)" # Placeholder link
+                 "**You must purchase a Rewarble Card from G2A** for the amount and submit the code.\n"
+                 "**G2A Link:** [Buy Rewarble Card Here](https://g2a.com/your-rewarble-link)" # Placeholder link
              )
         elif self.method == "paypal":
              details = (
-                 "**You must purchase a Rewarble Card from Eneba** for the amount and submit the code. You are allowed to stack codes and make sure you buy the correct ammount\n"
-                 "**Eneba Link:** [Buy Rewarble Card Here](https://www.eneba.com/rewarble-rewarble-visa-10-usd-voucher-global)" # Placeholder link
+                 "**You must purchase a Rewarble Card from Eneba** for the amount and submit the code.\n"
+                 "**Eneba Link:** [Buy Rewarble Card Here](https://eneba.com/your-rewarble-link)" # Placeholder link
              )
         else: # Giftcard
              details = "Please purchase the necessary giftcard and prepare to submit the code/details."
@@ -575,15 +581,14 @@ async def fake_order_loop():
     price = get_price(amount)
     method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
 
-    embed1 = discord.Embed(title=f"{EMOJI_VERIFIED} New Order Placed", color=0x00A3FF)
+    # --- REPLACED THE LONG TEXT BLOCK WITH A CONCISE MESSAGE ---
+    embed1 = discord.Embed(title=f"🤖 New Public Order Placed", color=0x00A3FF)
     embed1.description = (
-        f"{EMOJI_WARNING} **Disclaimer**\n"
-        f"{EMOJI_VERIFIED} Minimum purchase amount is 10,000 {EMOJI_ROBUX}.\n"
-        f"{EMOJI_VERIFIED} {EMOJI_ROBUX} are delivered via Gamepass.\n"
-        f"{EMOJI_VERIFIED} Buying {EMOJI_ROBUX} through us is safe and secure. You will NOT get banned.\n"
-        f"{EMOJI_VERIFIED} Enjoy instant {EMOJI_ROBUX} delivery with fully automated payments.\n\n"
-        f"**Payment Method:** {method} • **Amount:** {amount:,} {EMOJI_ROBUX} • **Price:** ${price:.2f}"
+        f"A user has placed an order for **{amount:,} {EMOJI_ROBUX}** (Price: **${price:.2f}**) via **{method}**.\n"
+        f"Processing will begin shortly. Place your order now!"
     )
+    # --- END REPLACEMENT ---
+
     message1 = await channel.send(embed=embed1)
 
     await asyncio.sleep(30)
