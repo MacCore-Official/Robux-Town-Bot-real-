@@ -386,6 +386,34 @@ class PersistentPurchaseButton(discord.ui.View):
         await interaction.followup.send("Purchase started! Check your thread.", ephemeral=True)
 
 # -------------------------------------------------
+# INFO EMBED (FIXED)
+# -------------------------------------------------
+async def send_info_embed():
+    channel = bot.get_channel(INFO_CHANNEL_ID)
+    if not channel:
+        print("Info channel not found!")
+        return
+
+    embed = discord.Embed(color=0x00A3FF)
+    embed.set_author(name="Robux Town™", icon_url="https://i.imgur.com/ROBUXTOWN.png")
+    embed.description = (
+        "Automated Purchase\nSecure, instant Robux delivery.\n\n"
+        "Under 60 Seconds\nRobux delivered via Gamepass.\n\n"
+        "Smart Payments\nFully automated.\n\n"
+        "Bank-Level Security\nYou will NOT get banned.\n\n"
+        "Payment Options\n"
+        f"• {EMOJI_BITCOIN} Crypto (BTC/LTC/ETH/SOL)\n"
+        f"• {EMOJI_CARD} Card (G2A)\n"
+        f"• {EMOJI_PAYPAL} PayPal (Eneba)\n"
+        f"• {EMOJI_PAYMENT_SUPPORT} Giftcards"
+    )
+    embed.set_image(url="https://i.imgur.com/ROBUXTOWNBANNER.png")
+
+    view = PersistentPurchaseButton()
+    await channel.send(embed=embed, view=view)
+    print("Info embed sent (BLUE BORDER)")
+
+# -------------------------------------------------
 # STARTUP
 # -------------------------------------------------
 @bot.event
