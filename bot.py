@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINALIZED UI + LIVE PRICES + ADMIN PANEL + PRICE LIST + INFO EMBEDS
+# Robux Town™ – FINALIZED UI + LIVE PRICES + ADMIN PANEL + PRICE LIST + AUTO FAKE COMPLETION
 import os
 import asyncio
 import json
@@ -37,20 +37,20 @@ bot = commands.Bot(command_prefix="+", intents=intents, help_command=None)
 # Channels (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 INFO_CHANNEL_ID           = 1435516058105675818 # Main buy channel (Where persistent button is)
 PRICE_CHANNEL_ID          = 1435516058105675817 # Channel for the price list embed
-ORDER_LOG_CHANNEL_ID      = 1435516057845497981 # Channel for placing the order (pre-completion)
+ORDER_LOG_CHANNEL_ID      = 1435516057845497981 # Original log channel (No longer used by fake orders)
 COMPLETED_CHANNEL_ID      = 1435516058286035015 # Channel for completed orders
 LOG_CHANNEL_ID            = 1435516058286035020 # Staff payment submission log
 STAFF_ROLE_ID             = 1435516057526734991 
 STAFF_DM_IDS              = [1422665161466187976,1269145029943758899] 
 
-PAYMENT_METHOD_CHANNEL_ID = 1435516058105675820 # <-- NEW: Channel for Payment Methods
-TOS_CHANNEL_ID            = 1435516058286035016 # <-- NEW: Channel for Terms of Service 
+PAYMENT_METHOD_CHANNEL_ID = 1435516058105675820 # Channel for Payment Methods
+TOS_CHANNEL_ID            = 1435516058286035016 # Channel for Terms of Service 
 
 
 # EMOJIS (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
 EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
-EMOJI_LOADING        = "<a:Loading:1435526855523434576>" # FIXED: Animated emoji definition
+EMOJI_LOADING        = "<a:Loading:1435526855523434576>" 
 EMOJI_WARNING        = "<:warning:1435526954689495091>"
 EMOJI_BITCOIN        = "<:Bitcoin:1435526466527039579>"
 EMOJI_LITECOIN       = "<:Litecoin:1435526448684339321>"
@@ -495,26 +495,15 @@ async def admin_panel(ctx):
     await ctx.send(embed=embed, view=AdminPanel(), ephemeral=True)
 
 # -------------------------------------------------
-# MANUAL FAKE ORDER TRIGGER LOGIC (New/Re-implemented)
+# MANUAL FAKE ORDER TRIGGER LOGIC 
 # -------------------------------------------------
 async def trigger_fake_order_now():
-    """Generates and sends a single fake order (start and completion) immediately."""
-    order_channel = bot.get_channel(ORDER_LOG_CHANNEL_ID)
-    if not order_channel: return
-
-    amount = random.choice([10000, 25000, 50000, 100000])
+    """Generates and sends a single fake completion embed immediately."""
+    amount = random.choice([10000, 25000, 50000, 100000, 250000])
     price = get_price(amount)
     method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
-
-    # 1. Start Order Embed (Sent to ORDER_LOG_CHANNEL_ID)
-    embed1 = discord.Embed(title=f"🤖 New Public Order Placed", color=0x00A3FF)
-    embed1.description = (
-        f"A user has placed an order for **{amount:,} {EMOJI_ROBUX}** (Price: **${price:.2f}**) via **{method}**.\n"
-        f"Processing will begin shortly. Place your order now!"
-    )
-    await order_channel.send(embed=embed1)
     
-    # 2. Completion Embed (Sent to COMPLETED_CHANNEL_ID)
+    # Directly calls the completion function
     await send_completed_order(amount, price, method)
 
 # --- CENTRALIZED HANDLER FOR ADMIN BUTTONS ---
@@ -526,7 +515,7 @@ async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: 
     elif cid == "admin_fake_order":
         await interaction.response.defer(ephemeral=True)
         await trigger_fake_order_now()
-        await interaction.followup.send(f"{EMOJI_VERIFIED} Fake order triggered to the log channels.", ephemeral=True)
+        await interaction.followup.send(f"{EMOJI_VERIFIED} Fake order triggered to the completion channel.", ephemeral=True)
     elif cid == "admin_set_prices":
         await interaction.response.defer(ephemeral=True)
         await send_price_embed(force_new=True)
@@ -623,6 +612,19 @@ class QRModal(discord.ui.Modal):
             await interaction.response.send_message(f"{EMOJI_WARNING} Invalid coin specified. Must be one of: `btc`, `ltc`, `eth`, `sol`.", ephemeral=True)
 
 # -------------------------------------------------
+# AUTOMATED FAKE ORDER TASK (New/Simplified)
+# -------------------------------------------------
+@tasks.loop(hours=random.uniform(5, 10))
+async def automated_fake_completion_loop():
+    amount = random.choice([10000, 25000, 50000, 100000, 250000])
+    price = get_price(amount)
+    method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
+    
+    # Directly sends the final embed to the completed channel
+    await send_completed_order(amount, price, method)
+
+
+# -------------------------------------------------
 # COMPLETION LOGIC
 # -------------------------------------------------
 async def send_completed_order(amount, price, method):
@@ -633,6 +635,7 @@ async def send_completed_order(amount, price, method):
     user_name = "Hidden" 
     rating_stars = "⭐⭐⭐⭐ (4/5)" 
     
+    # Changed title to match the screenshot exactly: Checkmark + New Completed Order
     embed = discord.Embed(title=f"✅ New Completed Order", color=0x38B750) 
     
     embed.set_thumbnail(url="https://i.ibb.co/whbgBHWz/9c5fd434-f30f-4e24-8212-ea40fa098678.png") 
@@ -887,9 +890,13 @@ async def on_ready():
     # Ensure the info embeds are present and up-to-date
     await send_info_embed()
     await send_price_embed() 
-    await send_payment_methods_embed() # <-- NEW: Send Payment Methods
-    await send_tos_embed()             # <-- NEW: Send ToS
+    await send_payment_methods_embed() 
+    await send_tos_embed()             
     
+    # Start the automated fake order task
+    if not automated_fake_completion_loop.is_running():
+        automated_fake_completion_loop.start()
+
 
 # -------------------------------------------------
 # RUN
