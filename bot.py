@@ -358,13 +358,13 @@ class PurchaseFlow(discord.ui.View):
         details = ""
         if self.method == "card":
              details = (
-                 "**You must purchase a Rewarble Card from G2A** for the amount and submit the code.\n"
-                 "**G2A Link:** [Buy Rewarble Card Here](https://g2a.com/your-rewarble-link)" # Placeholder link
+                 "**You must purchase a Rewarble Card from G2A** for the amount and submit the code. You are allowed to stack codes and make sure you buy the correct ammount\n"
+                 "**G2A Link:** [Buy Rewarble Card Here](https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewarble-key-global-i10000502992001?suid=960beb55-4797-46d5-b14c-94995fd68f31)" # Placeholder link
              )
         elif self.method == "paypal":
              details = (
-                 "**You must purchase a Rewarble Card from Eneba** for the amount and submit the code.\n"
-                 "**Eneba Link:** [Buy Rewarble Card Here](https://eneba.com/your-rewarble-link)" # Placeholder link
+                 "**You must purchase a Rewarble Card from Eneba** for the amount and submit the code. You are allowed to stack codes and make sure you buy the correct ammount\n"
+                 "**Eneba Link:** [Buy Rewarble Card Here](https://www.eneba.com/rewarble-rewarble-visa-10-usd-voucher-global)" # Placeholder link
              )
         else: # Giftcard
              details = "Please purchase the necessary giftcard and prepare to submit the code/details."
