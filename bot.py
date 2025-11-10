@@ -47,7 +47,7 @@ EMOJI_PAYMENT_SUPPORT= "<:PAYMENT_SUPPORT:1435526984011874434>"
 # -------------------------------------------------
 # CRYPTO (LIVE PRICES + CUSTOM ADDRESS/QR)
 # -------------------------------------------------
-CRYPTO_IDS = {"btc": "BTCUSDT", "ltc": "LTCUSDT", "eth": "ETHUSDT", "sol": "SOLUSDT"}
+CRYPTO_IDS = {"btc": "bitcoin", "ltc": "litecoin", "eth": "ethereum", "sol": "solana"}
 
 # Persistent storage for addresses / QR
 CONFIG_FILE = "config.json"
@@ -80,9 +80,9 @@ config = load_config()
 
 async def get_crypto_price(crypto: str) -> float:
     try:
-        r = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={CRYPTO_IDS[crypto]}")
+        r = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={CRYPTO_IDS[crypto]}&vs_currencies=usd")
         r.raise_for_status()
-        return float(r.json()["price"])
+        return r.json()[CRYPTO_IDS[crypto]]["usd"]
     except:
         return 60000.0 if crypto == "btc" else 80.0 if crypto == "ltc" else 3000.0 if crypto == "eth" else 100.0
 
