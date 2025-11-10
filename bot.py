@@ -557,7 +557,7 @@ async def send_completed_order(amount, price, method):
     embed = discord.Embed(title=f"✅ New Completed Order", color=0x38B750) # Use a green color for success
     
     # Placeholder for the Robux World image
-    embed.set_thumbnail(url="https://i.imgur.com/ROBUX_WORLD_THUMBNAIL.png") 
+    embed.set_thumbnail(url="https://i.ibb.co/whbgBHWz/9c5fd434-f30f-4e24-8212-ea40fa098678.png") 
 
     # Field 1 (User / Payment Method)
     embed.add_field(name=f"{EMOJI_USER} User", value=f"**{user_name}**", inline=True)
@@ -639,20 +639,20 @@ async def send_info_embed(force_new: bool = False):
         print(f"Error checking for existing info embed: {e}")
 
     embed = discord.Embed(color=0x00A3FF)
-    embed.set_author(name="Robux Town™", icon_url="https://i.imgur.com/ROBUXTOWN.png")
+    embed.set_author(name="Robux Town™", icon_url="https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png")
     embed.description = (
         "**Automated Purchase**\nSecure, instant Robux delivery.\n\n"
-        "**Under 60 Seconds**\nRobux delivered via Gamepass.\n\n"
+        "**Under 10 Minutes**\nRobux delivered via Gamepass.\n\n"
         "**Smart Payments**\nFully automated.\n\n"
         "**Bank-Level Security**\nYou will NOT get banned.\n\n"
         "**Payment Options**\n"
-        f"• {EMOJI_BITCOIN} Crypto (BTC/LTC/ETH/SOL)\n"
+        f"• {EMOJI_CRYPTO} Crypto (BTC/LTC/ETH/SOL)\n"
         f"• {EMOJI_CARD} Card (G2A)\n"
         f"• {EMOJI_PAYPAL} PayPal (Eneba)\n"
         f"• {EMOJI_PAYMENT_SUPPORT} Giftcards\n\n"
         f"{EMOJI_ROBUX} **Rate:** **${ROBUX_RATE_PER_1000:.2f}** per 1,000 Robux"
     )
-    embed.set_image(url="https://i.imgur.com/ROBUXTOWNBANNER.png")
+    embed.set_image(url="https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png")
 
     view = PersistentPurchaseButton()
     await channel.send(embed=embed, view=view)
