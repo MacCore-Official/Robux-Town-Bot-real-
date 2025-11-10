@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINALIZED UI + LIVE PRICES + ADMIN PANEL + PRICE LIST
+# Robux Town™ – FINALIZED UI + LIVE PRICES + ADMIN PANEL + PRICE LIST (FAKE ORDER REMOVED)
 import os
 import asyncio
 import json
@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timedelta
 import requests
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands, tasks # tasks is kept for potential future use
 
 # -------------------------------------------------
 # CONFIG
@@ -30,17 +30,17 @@ bot = commands.Bot(command_prefix="+", intents=intents, help_command=None)
 
 # Channels (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 INFO_CHANNEL_ID      = 1435516058105675818 # Main buy channel (Where persistent button is)
-PRICE_CHANNEL_ID     = 1435516058105675817 # <-- NEW: Channel for the price list embed
-ORDER_LOG_CHANNEL_ID = 1435516057845497981 
-COMPLETED_CHANNEL_ID = 1435516058286035015 
-LOG_CHANNEL_ID       = 1435516058286035020 
+PRICE_CHANNEL_ID     = 1435516058105675817 # Channel for the price list embed
+ORDER_LOG_CHANNEL_ID = 1435516057845497981 # Original log channel (kept for context, though unused by fake orders now)
+COMPLETED_CHANNEL_ID = 1435516058286035015 # Channel for completed orders
+LOG_CHANNEL_ID       = 1435516058286035020 # Staff payment submission log
 STAFF_ROLE_ID        = 1435516057526734991 
 STAFF_DM_IDS         = [1422665161466187976,1269145029943758899] 
 
 # EMOJIS (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
 EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
-EMOJI_LOADING        = "<a:Loading:1435526855523434576>" # <-- FIXED: Animated emoji definition
+EMOJI_LOADING        = "<a:Loading:1435526855523434576>"
 EMOJI_WARNING        = "<:warning:1435526954689495091>"
 EMOJI_BITCOIN        = "<:Bitcoin:1435526466527039579>"
 EMOJI_LITECOIN       = "<:Litecoin:1435526448684339321>"
@@ -56,7 +56,7 @@ EMOJI_USD            = "💶"
 EMOJI_RATING         = "⭐" 
 EMOJI_ORDER_ID       = "📄" 
 EMOJI_LOCK           = "🔒" 
-EMOJI_MAX            = "🛑" # For max purchase amount
+EMOJI_MAX            = "🛑" 
 
 # -------------------------------------------------
 # PRICE CALCULATION 
@@ -71,7 +71,6 @@ def get_price(robux_amount: int) -> float:
 # -------------------------------------------------
 # PRICE LIST DATA (For the new embed)
 # -------------------------------------------------
-# NOTE: The base prices here MUST match the ROBUX_RATE_PER_1000
 ROBUX_PRODUCTS = {
     10000: {"label": "10,000 Robux", "price": 9.99, "tag": "🔥 Most Popular", "style": "fire"},
     25000: {"label": "25,000 Robux", "price": 24.99, "tag": "", "style": "default"},
@@ -378,7 +377,7 @@ class PurchaseFlow(discord.ui.View):
         elif self.method == "paypal":
              details = (
                  "**You must purchase a Rewarble Card from Eneba** for the amount and submit the code.\n"
-                 f"**Eneba Link:** [Buy Rewarble Card Here]({ENEBA_REWARBLE_LINK})"
+                 f"**Eneba Link:** [Buy Rewarble Card Here]({ENEBA_REWARBLE_LINK})" 
              )
         else: # Giftcard
              details = "Please purchase the necessary giftcard and prepare to submit the code/details."
@@ -449,6 +448,10 @@ async def on_message(message: discord.Message):
                 if amount < 10000:
                     await message.reply(f"{EMOJI_WARNING} The **minimum order** is 10,000 {EMOJI_ROBUX}. Please enter a higher amount.")
                     return
+                # NOTE: Max limit is 800,000 based on price list
+                if amount > 800000:
+                    await message.reply(f"{EMOJI_MAX} The **maximum order** is 800,000 {EMOJI_ROBUX}. Please enter a lower amount.")
+                    return
                 
                 # Proceed to step 3
                 flow.robux = amount
@@ -489,17 +492,16 @@ async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: 
     elif cid == "admin_set_qr":
         await interaction.response.send_modal(QRModal())
     elif cid == "admin_fake_order":
-        await interaction.response.defer(ephemeral=True) 
-        await fake_order_loop()
-        await interaction.followup.send(f"{EMOJI_VERIFIED} Fake order triggered to the log channels.", ephemeral=True)
-    elif cid == "admin_reset_embed":
-        await interaction.response.defer(ephemeral=True)
-        await send_info_embed(force_new=True)
-        await interaction.followup.send(f"{EMOJI_VERIFIED} New Info Embed sent to the main channel.", ephemeral=True)
+        # REMOVED: Since fake_order_loop is deleted, this button is now harmless but should be visually removed from the view.
+        await interaction.response.send_message(f"{EMOJI_WARNING} Automated order trigger is disabled.", ephemeral=True)
     elif cid == "admin_set_prices":
         await interaction.response.defer(ephemeral=True)
         await send_price_embed(force_new=True)
         await interaction.followup.send(f"{EMOJI_VERIFIED} New Price List embed sent to the price channel.", ephemeral=True)
+    elif cid == "admin_reset_embed":
+        await interaction.response.defer(ephemeral=True)
+        await send_info_embed(force_new=True)
+        await interaction.followup.send(f"{EMOJI_VERIFIED} New Info Embed sent to the main channel.", ephemeral=True)
 # -------------------------------------------------------------------------
 
 
@@ -517,10 +519,8 @@ class AdminPanel(discord.ui.View):
     @discord.ui.button(label="Set Crypto QR URL", style=discord.ButtonStyle.blurple, custom_id="admin_set_qr", emoji="🖼️")
     async def set_qr_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_set_qr")
-
-    @discord.ui.button(label="Trigger Fake Order", style=discord.ButtonStyle.green, custom_id="admin_fake_order", emoji="🤖")
-    async def fake_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_fake_order")
+    
+    # REMOVED: Fake Order button from the view to match user request
 
     @discord.ui.button(label="Update Price List", style=discord.ButtonStyle.green, custom_id="admin_set_prices", emoji=EMOJI_ROBUX)
     async def set_prices_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -572,35 +572,9 @@ class QRModal(discord.ui.Modal):
             await interaction.response.send_message(f"{EMOJI_WARNING} Invalid coin specified. Must be one of: `btc`, `ltc`, `eth`, `sol`.", ephemeral=True)
 
 # -------------------------------------------------
-# AUTOMATED ORDERS & COMPLETION
+# AUTOMATED ORDERS & COMPLETION (Only manual completion remains)
 # -------------------------------------------------
-@tasks.loop(hours=8.0) 
-async def fake_order_loop():
-    channel = bot.get_channel(ORDER_LOG_CHANNEL_ID)
-    if not channel: return
-
-    amount = random.choice([10000, 25000, 50000, 100000])
-    price = get_price(amount)
-    method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
-
-    # --- REPLACED THE LONG TEXT BLOCK WITH A CONCISE MESSAGE ---
-    embed1 = discord.Embed(title=f"🤖 New Public Order Placed", color=0x00A3FF)
-    embed1.description = (
-        f"A user has placed an order for **{amount:,} {EMOJI_ROBUX}** (Price: **${price:.2f}**) via **{method}**.\n"
-        f"Processing will begin shortly. Place your order now!"
-    )
-    # --- END REPLACEMENT ---
-
-    message1 = await channel.send(embed=embed1)
-
-    await asyncio.sleep(30)
-    embed2 = discord.Embed(title=f"{EMOJI_LOADING} Processing...", color=0x00A3FF)
-    embed2.description = f"Amount: {amount:,} {EMOJI_ROBUX}\nPrice: ${price:.2f}"
-    await message1.edit(embed=embed2)
-
-    if random.random() < 0.7:
-        await asyncio.sleep(10)
-        await send_completed_order(amount, price, method)
+# NOTE: The fake_order_loop task definition is entirely removed.
 
 async def send_completed_order(amount, price, method):
     channel = bot.get_channel(COMPLETED_CHANNEL_ID)
@@ -628,7 +602,7 @@ async def send_completed_order(amount, price, method):
     await channel.send(embed=embed)
 
 # -------------------------------------------------
-# PRICE LIST EMBED (NEW FEATURE)
+# PRICE LIST EMBED 
 # -------------------------------------------------
 async def send_price_embed(force_new: bool = False):
     channel = bot.get_channel(PRICE_CHANNEL_ID)
@@ -636,9 +610,19 @@ async def send_price_embed(force_new: bool = False):
         print("Price channel not found!")
         return
     
-    # ... (Code to check for existing embed remains here, removed for brevity)
-    
-    # --- START REVISED EMBED ---
+    # Check for existing message to avoid spamming the channel
+    try:
+        if not force_new:
+            messages = [m async for m in channel.history(limit=5)]
+            for msg in messages:
+                # Check for the specific title to confirm it's the price embed
+                if msg.author == bot.user and msg.embeds and "Robux Town | Information:" in msg.embeds[0].title:
+                    print("Existing Price embed found and preserved.")
+                    return
+    except Exception as e:
+        print(f"Error checking for existing price embed: {e}")
+
+    # --- REVISED EMBED ---
     embed = discord.Embed(
         title="📢 Robux Town | Information:",
         description=(
@@ -649,27 +633,29 @@ async def send_price_embed(force_new: bool = False):
         ),
         color=0x2E639A
     )
-    # Note: Using the RoStore thumbnail from your screenshot for better branding
     embed.set_thumbnail(url="https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png")
 
     # Products Section - Focused on Most Popular and Best Deal
     products_list = []
     
-    # Add Most Popular Section
     products_list.append("**Most Popular** 🔥")
     products_list.extend([
         f"• {EMOJI_ROBUX} **{p['label']}** | **${p['price']:.2f}**"
         for r, p in ROBUX_PRODUCTS.items() if p['style'] == 'fire'
     ])
     
-    # Add Best Deal Section
     products_list.append("\n**Best Deal** 💰")
     products_list.extend([
         f"• {EMOJI_ROBUX} **{p['label']}** | **${p['price']:.2f}**"
         for r, p in ROBUX_PRODUCTS.items() if p['style'] == 'deal'
     ])
     
-    # Combine the lists into a single field value
+    products_list.append("\n**Other Packages**")
+    products_list.extend([
+        f"• {EMOJI_ROBUX} **{p['label']}** | **${p['price']:.2f}**"
+        for r, p in ROBUX_PRODUCTS.items() if p['style'] == 'default'
+    ])
+
     products_field_value = "\n".join(products_list)
     
     embed.add_field(name=f"{EMOJI_ROBUX} **Available Packages**:", 
@@ -770,17 +756,11 @@ async def on_ready():
     await send_info_embed()
     await send_price_embed() # Send the price embed on startup
     
-    if not fake_order_loop.is_running():
-        fake_order_loop.start()
+    # Removed: fake_order_loop.start() to prevent spam
 
 # -------------------------------------------------
 # RUN
 # -------------------------------------------------
-# --- Rewarble Links ---
-ENEBA_REWARBLE_LINK = "https://www.eneba.com/rewarble-rewarble-visa-10-usd-voucher-global"
-G2A_REWARBLE_LINK = "https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewarble-key-global-i10000502992001?suid=960beb55-4797-46d5-b14c-94995fd68f31"
-# ----------------------
-
 if __name__ == "__main__":
     if BOT_TOKEN == "YOUR_DISCORD_BOT_TOKEN_HERE":
         print("--- WARNING ---")
