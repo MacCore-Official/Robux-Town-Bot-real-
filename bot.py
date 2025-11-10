@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FIXED ALL ERRORS + EXACT UI + LIVE PRICES + COMMANDS + LOG + ADMIN PANEL
+# Robux Town™ – FINALIZED UI + LIVE PRICES + ADMIN PANEL + PRICE LIST
 import os
 import asyncio
 import json
@@ -29,17 +29,18 @@ intents.members = True
 bot = commands.Bot(command_prefix="+", intents=intents, help_command=None)
 
 # Channels (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
-INFO_CHANNEL_ID      = 1435516058105675818 # E.g., main buy channel
-ORDER_LOG_CHANNEL_ID = 1435516058286035015 # E.g., fake order log (Pre-processing)
-COMPLETED_CHANNEL_ID = 1435516058286035015 # E.g., completed order log (Public Success)
-LOG_CHANNEL_ID       = 1435516058286035020 # E.g., staff payment submission log
-STAFF_ROLE_ID        = 1435516057526734991 # Role required for staff commands
-STAFF_DM_IDS         = [1422665161466187976,1269145029943758899] # Your user ID and other staff IDs
+INFO_CHANNEL_ID      = 1435516058105675818 # Main buy channel (Where persistent button is)
+PRICE_CHANNEL_ID     = 1435516058105675817 # <-- NEW: Channel for the price list embed
+ORDER_LOG_CHANNEL_ID = 1435516058286035015 
+COMPLETED_CHANNEL_ID = 1435516058286035015 
+LOG_CHANNEL_ID       = 1435516058286035020 
+STAFF_ROLE_ID        = 1435516057526734991 
+STAFF_DM_IDS         = [1422665161466187976,1269145029943758899] 
 
 # EMOJIS (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
 EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
-EMOJI_LOADING        = "<:Loading:1435526855523434576>"
+EMOJI_LOADING        = "<a:Loading:1435526855523434576>" # <-- FIXED: Animated emoji definition
 EMOJI_WARNING        = "<:warning:1435526954689495091>"
 EMOJI_BITCOIN        = "<:Bitcoin:1435526466527039579>"
 EMOJI_LITECOIN       = "<:Litecoin:1435526448684339321>"
@@ -55,6 +56,7 @@ EMOJI_USD            = "💶"
 EMOJI_RATING         = "⭐" 
 EMOJI_ORDER_ID       = "📄" 
 EMOJI_LOCK           = "🔒" 
+EMOJI_MAX            = "🛑" # For max purchase amount
 
 # -------------------------------------------------
 # PRICE CALCULATION 
@@ -65,6 +67,18 @@ ROBUX_RATE_PER_1000 = 1.00
 def get_price(robux_amount: int) -> float:
     """Calculates the total USD price based on the Robux amount."""
     return (robux_amount / 1000) * ROBUX_RATE_PER_1000
+
+# -------------------------------------------------
+# PRICE LIST DATA (For the new embed)
+# -------------------------------------------------
+# NOTE: The base prices here MUST match the ROBUX_RATE_PER_1000
+ROBUX_PRODUCTS = {
+    10000: {"label": "10,000 Robux", "price": 9.99, "tag": "🔥 Most Popular", "style": "fire"},
+    25000: {"label": "25,000 Robux", "price": 24.99, "tag": "", "style": "default"},
+    50000: {"label": "50,000 Robux", "price": 49.99, "tag": "", "style": "default"},
+    100000: {"label": "100,000 Robux", "price": 99.99, "tag": "", "style": "default"},
+    250000: {"label": "250,000 Robux", "price": 249.99, "tag": "💰 Best Deal", "style": "deal"},
+}
 
 # -------------------------------------------------
 # CRYPTO (LIVE PRICES + CUSTOM ADDRESS/QR)
@@ -93,7 +107,6 @@ def load_config():
         try:
             with open(CONFIG_FILE, "r") as f:
                 loaded_data = json.load(f)
-                # Merge loaded data with default config to ensure all keys exist
                 config_data = default_config.copy()
                 config_data.update(loaded_data)
                 return config_data
@@ -114,7 +127,6 @@ async def get_crypto_price(crypto: str) -> float:
         r.raise_for_status()
         return r.json()[CRYPTO_IDS[crypto]]["usd"]
     except:
-        # Fallback values if CoinGecko API fails
         return 60000.0 if crypto == "btc" else 80.0 if crypto == "ltc" else 3000.0 if crypto == "eth" else 100.0
 
 # -------------------------------------------------
@@ -125,7 +137,6 @@ async def send_to_staff(order_data: dict):
     for k, v in order_data.items():
         embed.add_field(name=k, value=v, inline=False)
     
-    # Send to Staff DMs
     for user_id in STAFF_DM_IDS:
         try:
             user = await bot.fetch_user(user_id)
@@ -134,7 +145,6 @@ async def send_to_staff(order_data: dict):
             print(f"Could not DM staff user {user_id}")
             pass
 
-    # Log to new channel
     channel = bot.get_channel(LOG_CHANNEL_ID)
     if channel:
         await channel.send(embed=embed)
@@ -233,7 +243,6 @@ class PurchaseFlow(discord.ui.View):
     async def send_step(self, step: int):
         color = 0x00A3FF
         if step == 1:
-            # Send the disclaimer right before Step 1 to ensure visibility
             await send_disclaimer_embed(self.thread) 
             
             embed = discord.Embed(title="Would you like to start buying robux? (1/5)", color=color)
@@ -323,15 +332,13 @@ class PurchaseFlow(discord.ui.View):
         # Ensure we don't divide by zero
         amount_coin = round(price_usd / coin_price, 8) if coin_price else 0.0
         
-        # FIX: config["wallets"] is now guaranteed to exist due to robust loading
         address = config["wallets"].get(self.crypto, "Address Not Set")
-        # Use fallback QR URL if none is configured
         qr_url = config["qr_urls"].get(self.crypto)
         if not qr_url or not qr_url.startswith("http"):
              qr_url = f"https://api.qrserver.com/v1/create-qr-code/?data={address}&size=200x200"
 
-        # --- UPDATED: Calculate expiry time (15 minutes from now) ---
-        expiry_time = datetime.now() + timedelta(minutes=15)
+        # --- UPDATED: Calculate expiry time (20 minutes from now) ---
+        expiry_time = datetime.now() + timedelta(minutes=20)
         expiry_timestamp = int(expiry_time.timestamp())
         
         embed = discord.Embed(title=f"{self.crypto.upper()} Payment Invoice (5/5)", color=0x00A3FF)
@@ -362,15 +369,16 @@ class PurchaseFlow(discord.ui.View):
         embed = discord.Embed(title=f"{name.upper()} Payment Invoice (5/5)", color=0x00A3FF)
         
         details = ""
+        # --- UPDATED: Rewarble links added ---
         if self.method == "card":
              details = (
                  "**You must purchase a Rewarble Card from G2A** for the amount and submit the code.\n"
-                 "**G2A Link:** [Buy Rewarble Card Here](https://g2a.com/your-rewarble-link)" # Placeholder link
+                 f"**G2A Link:** [Buy Rewarble Card Here]({G2A_REWARBLE_LINK})" 
              )
         elif self.method == "paypal":
              details = (
                  "**You must purchase a Rewarble Card from Eneba** for the amount and submit the code.\n"
-                 "**Eneba Link:** [Buy Rewarble Card Here](https://eneba.com/your-rewarble-link)" # Placeholder link
+                 f"**Eneba Link:** [Buy Rewarble Card Here]({ENEBA_REWARBLE_LINK})"
              )
         else: # Giftcard
              details = "Please purchase the necessary giftcard and prepare to submit the code/details."
@@ -418,15 +426,6 @@ async def on_interaction(interaction: discord.Interaction):
     elif cid == "submit_details" and flow:
         modal = PaymentModal(flow.method, flow.robux, flow.price)
         await interaction.response.send_modal(modal)
-
-    # --- ADMIN PANEL BUTTONS ---
-    elif cid.startswith("admin_"):
-        pass 
-    
-    # --- CLOSE TICKET BUTTON ---
-    elif cid == "close_ticket_btn":
-        # The logic is handled inside the CloseTicketView class method
-        pass 
 
     # Process commands if it was a message interaction that bypassed on_message
     await bot.process_commands(interaction.message)
@@ -481,27 +480,26 @@ async def admin_panel(ctx):
         description="Select an action to manage bot settings or trigger automated events.",
         color=discord.Color.blue()
     )
-    # Acknowledging the command implicitly by sending a message (ephemeral=True)
     await ctx.send(embed=embed, view=AdminPanel(), ephemeral=True)
 
 # --- CENTRALIZED HANDLER FOR ADMIN BUTTONS (Acknowledges interaction) ---
 async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: str):
     if cid == "admin_set_address":
-        # Acknowledge by sending the Modal (send_modal acknowledges immediately)
         await interaction.response.send_modal(AddressModal())
     elif cid == "admin_set_qr":
-        # Acknowledge by sending the Modal
         await interaction.response.send_modal(QRModal())
     elif cid == "admin_fake_order":
-        # Acknowledge by deferring, then follow up
         await interaction.response.defer(ephemeral=True) 
         await fake_order_loop()
         await interaction.followup.send(f"{EMOJI_VERIFIED} Fake order triggered to the log channels.", ephemeral=True)
     elif cid == "admin_reset_embed":
-        # Acknowledge by deferring, then follow up
         await interaction.response.defer(ephemeral=True)
         await send_info_embed(force_new=True)
         await interaction.followup.send(f"{EMOJI_VERIFIED} New Info Embed sent to the main channel.", ephemeral=True)
+    elif cid == "admin_set_prices":
+        await interaction.response.defer(ephemeral=True)
+        await send_price_embed(force_new=True)
+        await interaction.followup.send(f"{EMOJI_VERIFIED} New Price List embed sent to the price channel.", ephemeral=True)
 # -------------------------------------------------------------------------
 
 
@@ -523,6 +521,10 @@ class AdminPanel(discord.ui.View):
     @discord.ui.button(label="Trigger Fake Order", style=discord.ButtonStyle.green, custom_id="admin_fake_order", emoji="🤖")
     async def fake_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_fake_order")
+
+    @discord.ui.button(label="Update Price List", style=discord.ButtonStyle.green, custom_id="admin_set_prices", emoji=EMOJI_ROBUX)
+    async def set_prices_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_set_prices")
 
     @discord.ui.button(label="Reset Info Embed", style=discord.ButtonStyle.red, custom_id="admin_reset_embed", emoji="🔄")
     async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -604,33 +606,83 @@ async def send_completed_order(amount, price, method):
     channel = bot.get_channel(COMPLETED_CHANNEL_ID)
     if not channel: return
     
-    # Generate a plausible Order ID (current Unix timestamp + random sequence)
     order_id = str(int(time.time() * 1000))[4:] + str(random.randint(100, 999)) 
-    
     user_name = "Hidden" 
     rating_stars = "⭐⭐⭐⭐ (4/5)" 
     
-    embed = discord.Embed(title=f"✅ New Completed Order", color=0x38B750) # Use a green color for success
+    embed = discord.Embed(title=f"✅ New Completed Order", color=0x38B750) 
     
-    # Placeholder for the Robux World image
     embed.set_thumbnail(url="https://i.ibb.co/whbgBHWz/9c5fd434-f30f-4e24-8212-ea40fa098678.png") 
 
-    # Field 1 (User / Payment Method)
     embed.add_field(name=f"{EMOJI_USER} User", value=f"**{user_name}**", inline=True)
     embed.add_field(name="💳 Payment Method", value=f"**{method}**", inline=True)
     
-    # Field 2 (Robux Purchased / USD Spent)
     embed.add_field(name=f"{EMOJI_ROBUX} Robux Purchased", value=f"**{amount:,} Robux**", inline=False) 
     embed.add_field(name=f"{EMOJI_USD} USD Spent", value=f"**${price:.2f}**", inline=True)
     embed.add_field(name=f"{EMOJI_RATING} Rating", value=rating_stars, inline=True)
     
-    # Field 3 (Order ID - Takes full width)
     embed.add_field(name=f"{EMOJI_ORDER_ID} Order ID", value=f"`{order_id}`", inline=False)
     
-    # Footer (Matching screenshot format)
     embed.set_footer(text=f"Powered by Robux Town • discord.gg/robuxtown • {datetime.now().strftime('%B %d, %Y at %H:%M UTC')} ")
     
     await channel.send(embed=embed)
+
+# -------------------------------------------------
+# PRICE LIST EMBED (NEW FEATURE)
+# -------------------------------------------------
+async def send_price_embed(force_new: bool = False):
+    channel = bot.get_channel(PRICE_CHANNEL_ID)
+    if not channel:
+        print("Price channel not found!")
+        return
+    
+    # Check for existing message to avoid spamming the channel
+    try:
+        if not force_new:
+            messages = [m async for m in channel.history(limit=5)]
+            for msg in messages:
+                if msg.author == bot.user and "Information:" in msg.embeds[0].title:
+                    print("Existing Price embed found and preserved.")
+                    return
+    except Exception as e:
+        print(f"Error checking for existing price embed: {e}")
+
+    embed = discord.Embed(
+        title="📢 Information:",
+        description=(
+            f"• You will not get **Banned** for buying robux from us.\n"
+            f"• Robux can be delivered through **Gamepass** or a **Giftcard**.\n"
+            f"• The **Maximum** amount you can buy is **5,000,000** {EMOJI_ROBUX}.\n"
+        ),
+        color=0x2E639A
+    )
+    embed.set_thumbnail(url="https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png") # Reusing auth image
+
+    # Products Section
+    products_field = "**Products:**\n\n**Most Popular** 🔥\n"
+    products_field += "\n".join([
+        f"• {EMOJI_ROBUX} **{p['label']}** | **${p['price']:.2f}**"
+        for r, p in ROBUX_PRODUCTS.items() if p['style'] == 'fire'
+    ])
+    
+    products_field += "\n\n**Best Deal** 💰\n"
+    products_field += "\n".join([
+        f"• {EMOJI_ROBUX} **{p['label']}** | **${p['price']:.2f}**"
+        for r, p in ROBUX_PRODUCTS.items() if p['style'] == 'deal'
+    ])
+    
+    products_field += "\n\n**Standard Packages**\n"
+    products_field += "\n".join([
+        f"• {EMOJI_ROBUX} **{p['label']}** | **${p['price']:.2f}**"
+        for r, p in ROBUX_PRODUCTS.items() if p['style'] == 'default'
+    ])
+    
+    embed.add_field(name=f"{EMOJI_ROBUX} **Products**:", value=products_field, inline=False)
+    
+    embed.set_image(url="https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png") # Reusing banner
+
+    await channel.send(embed=embed)
+    print("Price List embed sent.")
 
 # -------------------------------------------------
 # PERSISTENT PURCHASE BUTTON
@@ -644,7 +696,6 @@ class PersistentPurchaseButton(discord.ui.View):
         user_id = interaction.user.id
         
         if user_id in active_flows:
-            # Check if existing thread is still open
             existing_flow = active_flows[user_id]
             if not existing_flow.thread.archived:
                 await interaction.response.send_message(
@@ -655,13 +706,12 @@ class PersistentPurchaseButton(discord.ui.View):
 
         await interaction.response.defer(ephemeral=True)
         thread_name = f"Purchase-{interaction.user.name}-{random.randint(1000,9999)}"
-        # Use channel ID from interaction's channel to create the thread in the right place
         info_channel = bot.get_channel(INFO_CHANNEL_ID) or interaction.channel
         
         thread = await info_channel.create_thread(
             name=thread_name,
             auto_archive_duration=1440,
-            type=discord.ChannelType.private_thread # Use a private thread for purchase security/privacy
+            type=discord.ChannelType.private_thread
         )
         await thread.add_user(interaction.user)
         
@@ -671,7 +721,7 @@ class PersistentPurchaseButton(discord.ui.View):
         await interaction.followup.send(f"Purchase started! Check your new private thread: {thread.mention}", ephemeral=True)
 
 # -------------------------------------------------
-# INFO EMBED (FIXED)
+# INFO EMBED 
 # -------------------------------------------------
 async def send_info_embed(force_new: bool = False):
     channel = bot.get_channel(INFO_CHANNEL_ID)
@@ -679,16 +729,12 @@ async def send_info_embed(force_new: bool = False):
         print("Info channel not found! Cannot send info embed.")
         return
 
-    # Check for existing message to avoid spamming the channel
     try:
         messages = [m async for m in channel.history(limit=5)]
         for msg in messages:
             if msg.author == bot.user and msg.components and not force_new:
-                # Found an existing message with the button, don't send a new one
                 print("Existing Info embed found and preserved.")
                 return
-    except discord.Forbidden:
-        print("Missing permissions to read channel history for info embed check.")
     except Exception as e:
         print(f"Error checking for existing info embed: {e}")
 
@@ -724,6 +770,7 @@ async def on_ready():
     
     # Ensure the info embed is present and up-to-date
     await send_info_embed()
+    await send_price_embed() # Send the price embed on startup
     
     if not fake_order_loop.is_running():
         fake_order_loop.start()
@@ -731,6 +778,11 @@ async def on_ready():
 # -------------------------------------------------
 # RUN
 # -------------------------------------------------
+# --- Rewarble Links ---
+ENEBA_REWARBLE_LINK = "https://www.eneba.com/rewarble-rewarble-visa-10-usd-voucher-global"
+G2A_REWARBLE_LINK = "https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewarble-key-global-i10000502992001?suid=960beb55-4797-46d5-b14c-94995fd68f31"
+# ----------------------
+
 if __name__ == "__main__":
     if BOT_TOKEN == "YOUR_DISCORD_BOT_TOKEN_HERE":
         print("--- WARNING ---")
