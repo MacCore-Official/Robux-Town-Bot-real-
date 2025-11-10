@@ -228,7 +228,7 @@ class PurchaseFlow(discord.ui.View):
                 placeholder="Select your payment method",
                 custom_id="payment_select",
                 options=[
-                    discord.SelectOption(label="Cryptocurrency", value="crypto", emoji=EMOJI_BITCOIN),
+                    discord.SelectOption(label="Cryptocurrency", value="crypto", emoji=EMOJI_CRYPTO),
                     discord.SelectOption(label="Card (G2A)", value="card", emoji=EMOJI_CARD),
                     discord.SelectOption(label="PayPal (Eneba)", value="paypal", emoji=EMOJI_PAYPAL),
                     discord.SelectOption(label="Giftcards", value="gift", emoji=EMOJI_PAYMENT_SUPPORT),
