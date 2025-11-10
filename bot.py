@@ -47,7 +47,7 @@ EMOJI_PAYMENT_SUPPORT= "<:PAYMENT_SUPPORT:1435526984011874434>"
 # -------------------------------------------------
 # CRYPTO (LIVE PRICES + CUSTOM ADDRESS/QR)
 # -------------------------------------------------
-CRYPTO_IDS = {"btc": "bitcoin", "ltc": "litecoin", "eth": "ethereum", "sol": "solana"}
+CRYPTO_IDS = {"btc": "BTCUSDT", "ltc": "LTCUSDT", "eth": "ETHUSDT", "sol": "SOLUSDT"}
 
 # Persistent storage for addresses / QR
 CONFIG_FILE = "config.json"
@@ -80,9 +80,9 @@ config = load_config()
 
 async def get_crypto_price(crypto: str) -> float:
     try:
-        r = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={CRYPTO_IDS[crypto]}&vs_currencies=usd")
+        r = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={CRYPTO_IDS[crypto]}")
         r.raise_for_status()
-        return r.json()[CRYPTO_IDS[crypto]]["usd"]
+        return float(r.json()["price"])
     except:
         return 60000.0 if crypto == "btc" else 80.0 if crypto == "ltc" else 3000.0 if crypto == "eth" else 100.0
 
@@ -384,6 +384,48 @@ class PersistentPurchaseButton(discord.ui.View):
         active_flows[interaction.user.id] = flow
         await flow.send_step(1)
         await interaction.followup.send("Purchase started! Check your thread.", ephemeral=True)
+
+# -------------------------------------------------
+# AUTOMATED ORDERS
+# -------------------------------------------------
+@tasks.loop(minutes=random.uniform(5, 15))
+async def fake_order_loop():
+    channel = bot.get_channel(ORDER_LOG_CHANNEL_ID)
+    if not channel: return
+
+    amount = random.choice([10000, 25000, 50000, 100000])
+    price = get_price(amount)
+    method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
+
+    embed1 = discord.Embed(title=f"{EMOJI_VERIFIED} New Order Placed", color=0x00A3FF)
+    embed1.description = (
+        f"{EMOJI_WARNING} **Disclaimer**\n"
+        f"{EMOJI_VERIFIED} Minimum purchase amount is 10,000 {EMOJI_ROBUX}.\n"
+        f"{EMOJI_VERIFIED} {EMOJI_ROBUX} are delivered via Gamepass.\n"
+        f"{EMOJI_VERIFIED} Buying {EMOJI_ROBUX} through us is safe and secure. You will NOT get banned.\n"
+        f"{EMOJI_VERIFIED} Enjoy instant {EMOJI_ROBUX} delivery with fully automated payments.\n\n"
+        f"**Payment Method:** {method} • **Amount:** {amount:,} {EMOJI_ROBUX} • **Price:** ${price:.2f}"
+    )
+    await channel.send(embed=embed1)
+
+    await asyncio.sleep(30)
+    embed2 = discord.Embed(title=f"{EMOJI_LOADING} Processing...", color=0x00A3FF)
+    embed2.description = f"Amount: {amount:,} {EMOJI_ROBUX}\nPrice: ${price:.2f}"
+    await channel.send(embed=embed2)
+
+    if random.random() < 0.7:
+        await asyncio.sleep(10)
+        await send_completed_order(amount, price, method)
+
+async def send_completed_order(amount, price, method):
+    channel = bot.get_channel(COMPLETED_CHANNEL_ID)
+    if not channel: return
+    embed = discord.Embed(title=f"{EMOJI_VERIFIED} New Completed Order", color=0x00A3FF)
+    embed.add_field(name="Robux", value=f"{amount:,} (via Gamepass)", inline=False)
+    embed.add_field(name="USD", value=f"${price:.2f}", inline=True)
+    embed.add_field(name="Method", value=method, inline=True)
+    embed.set_footer(text="Robux Town™")
+    await channel.send(embed=embed)
 
 # -------------------------------------------------
 # INFO EMBED (FIXED)
