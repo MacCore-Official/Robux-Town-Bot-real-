@@ -306,7 +306,7 @@ class PurchaseFlow(discord.ui.View):
 
         # Checking embed
         check_embed = discord.Embed(title="Checking For Transactions", color=0x00A3FF)
-        check_embed.description = f"{EMOJI_LOADING} We are actively monitoring transactions. Please proceed with your payment to complete the transaction process."
+        check_embed.description = f"<a:Loading:1435526855523434576> We are actively monitoring transactions. Please proceed with your payment to complete the transaction process."
         await interaction.followup.send(embed=check_embed)
 
     async def send_payment_invoice(self, interaction: discord.Interaction):
