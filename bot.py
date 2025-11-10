@@ -49,11 +49,12 @@ EMOJI_CARD           = "<:Card:1435526554783318047>"
 EMOJI_PAYPAL         = "<:PayPal:1435526543513354354>"
 EMOJI_PAYMENT_SUPPORT= "<:PAYMENT_SUPPORT:1435526984011874434>"
 EMOJI_COG            = "⚙️"
-EMOJI_CRYPTO         = "<:Crypto:1437309415551406222>" # Assuming this is a general crypto icon
+EMOJI_CRYPTO         = "<:Crypto:1437309415551406222>" 
 EMOJI_USER           = "👤" 
 EMOJI_USD            = "💶" 
 EMOJI_RATING         = "⭐" 
 EMOJI_ORDER_ID       = "📄" 
+EMOJI_LOCK           = "🔒" # Added lock emoji for close ticket
 
 # -------------------------------------------------
 # PRICE CALCULATION (FIXED THE MISSING FUNCTION)
@@ -176,6 +177,45 @@ class PaymentModal(discord.ui.Modal):
         await interaction.response.send_message(f"{EMOJI_VERIFIED} **Payment Submitted!** Your details have been sent to staff for manual verification. Please wait.", ephemeral=True)
         await send_to_staff(order_data)
 
+# -------------------------------------------------
+# CLOSE TICKET VIEW
+# -------------------------------------------------
+class CloseTicketView(discord.ui.View):
+    def __init__(self, thread_id):
+        super().__init__(timeout=None)
+        self.thread_id = thread_id
+
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red, custom_id="close_ticket_btn", emoji=EMOJI_LOCK)
+    async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        thread = bot.get_channel(self.thread_id)
+        if thread:
+            try:
+                await interaction.response.send_message("Closing the ticket...", ephemeral=False)
+                # Archive and lock the thread
+                await thread.edit(archived=True, locked=True)
+                # Remove flow from active list
+                active_flows.pop(interaction.user.id, None)
+            except discord.Forbidden:
+                await interaction.response.send_message(f"{EMOJI_WARNING} I do not have permission to close this ticket.", ephemeral=True)
+            except Exception as e:
+                await interaction.response.send_message(f"{EMOJI_WARNING} An error occurred while closing the ticket: {e}", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"{EMOJI_WARNING} Could not find the thread.", ephemeral=True)
+
+# -------------------------------------------------
+# DISCLAIMER EMBED
+# -------------------------------------------------
+async def send_disclaimer_embed(thread: discord.Thread):
+    embed = discord.Embed(
+        title="⚠️ Please Note",
+        description=(
+            "**Please make sure that all conversations related to the deal are done within this ticket.** Failing to do so may put you at risk of being scammed.\n\n"
+            "Our staff will **never DM you** regarding any deals that are active or have already been completed."
+        ),
+        color=0xFFA500 # Orange color for warning
+    )
+    view = CloseTicketView(thread.id)
+    await thread.send(embed=embed, view=view)
 
 # -------------------------------------------------
 # PURCHASE FLOW
@@ -195,6 +235,9 @@ class PurchaseFlow(discord.ui.View):
     async def send_step(self, step: int):
         color = 0x00A3FF
         if step == 1:
+            # Send the disclaimer right before Step 1 to ensure visibility
+            await send_disclaimer_embed(self.thread) 
+            
             embed = discord.Embed(title="Would you like to start buying robux? (1/5)", color=color)
             embed.description = "Please click \"Yes\" to begin."
             view = discord.ui.View(timeout=None)
@@ -314,9 +357,9 @@ class PurchaseFlow(discord.ui.View):
         
         details = ""
         if self.method == "card":
-             details = "You will need to purchase a **G2A Gift Card** for the amount and submit the code."
+             details = "**You must purchase a Rewarble Card from G2A** for the amount and submit the code."
         elif self.method == "paypal":
-             details = "You will need to purchase an **Eneba Gift Card** for the amount and submit the code."
+             details = "**You must purchase a Rewarble Card from Eneba** for the amount and submit the code."
         else: # Giftcard
              details = "Please purchase the necessary giftcard and prepare to submit the code/details."
              
@@ -365,10 +408,14 @@ async def on_interaction(interaction: discord.Interaction):
         await interaction.response.send_modal(modal)
 
     # --- ADMIN PANEL BUTTONS ---
-    # Delegated interaction handling to AdminPanel callbacks (which call the handler)
     elif cid.startswith("admin_"):
-        pass # The button callback handles the execution of handle_admin_panel_interaction
+        pass 
     
+    # --- CLOSE TICKET BUTTON ---
+    elif cid == "close_ticket_btn":
+        # The logic is handled inside the CloseTicketView class method
+        pass 
+
     # Process commands if it was a message interaction that bypassed on_message
     await bot.process_commands(interaction.message)
 
@@ -510,10 +557,10 @@ class QRModal(discord.ui.Modal):
             await interaction.response.send_message(f"{EMOJI_VERIFIED} Updated **{coin.upper()}** QR URL.", ephemeral=True)
         else:
             await interaction.response.send_message(f"{EMOJI_WARNING} Invalid coin specified. Must be one of: `btc`, `ltc`, `eth`, `sol`.", ephemeral=True)
+
 # -------------------------------------------------
 # AUTOMATED ORDERS & COMPLETION
 # -------------------------------------------------
-# CHANGE: Set loop interval to 8 hours (8 * 60 minutes)
 @tasks.loop(hours=8.0) 
 async def fake_order_loop():
     channel = bot.get_channel(ORDER_LOG_CHANNEL_ID)
@@ -543,7 +590,6 @@ async def fake_order_loop():
         await asyncio.sleep(10)
         await send_completed_order(amount, price, method)
 
-# CHANGE: Updated the completed order embed to match the screenshot provided
 async def send_completed_order(amount, price, method):
     channel = bot.get_channel(COMPLETED_CHANNEL_ID)
     if not channel: return
@@ -572,8 +618,6 @@ async def send_completed_order(amount, price, method):
     embed.add_field(name=f"{EMOJI_ORDER_ID} Order ID", value=f"`{order_id}`", inline=False)
     
     # Footer (Matching screenshot format)
-    # The current time uses NZDT, but Discord displays times in UTC in the footer.
-    # The time is dynamically generated, so it will be accurate when run.
     embed.set_footer(text=f"Powered by Robux Town • discord.gg/robuxtown • {datetime.now().strftime('%B %d, %Y at %H:%M UTC')} ")
     
     await channel.send(embed=embed)
@@ -667,8 +711,11 @@ async def on_ready():
     
     # Add persistent view back in case of bot restart
     bot.add_view(PersistentPurchaseButton())
-    
-    # Ensure the info embed is present and up-to-date
+    # Add the CloseTicketView back for persistence
+    # NOTE: Since CloseTicketView uses the thread ID in its constructor, 
+    # we can't reliably re-add it here without tracking active thread IDs. 
+    # It will only work during a single bot uptime.
+
     await send_info_embed()
     
     if not fake_order_loop.is_running():
