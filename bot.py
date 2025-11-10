@@ -640,7 +640,7 @@ async def send_price_embed(force_new: bool = False):
     
     # --- START REVISED EMBED ---
     embed = discord.Embed(
-        title="📢 ROSTORE | Information:",
+        title="📢 Robux Town | Information:",
         description=(
             f"**Welcome to Robux Town!** We pride ourselves on fast, reliable delivery and industry-low prices. We are currently accepting orders up to **800,000** {EMOJI_ROBUX}.\n\n"
             f"• You will not get **Banned** for buying robux from us.\n"
