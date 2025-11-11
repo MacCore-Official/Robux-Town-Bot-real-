@@ -144,7 +144,7 @@ async def get_crypto_price(crypto: str) -> float:
         return 60000.0 if crypto == "btc" else 80.0 if crypto == "ltc" else 3000.0 if crypto == "eth" else 100.0
 
 # -------------------------------------------------
-# SEND TO STAFF DMs + LOG CHANNEL
+# SEND TO STAFF DMs + LOG CHANNEL (Remains the same)
 # -------------------------------------------------
 async def send_to_staff(order_data: dict):
     embed = discord.Embed(title="New Payment Submission", color=0x00A3FF)
@@ -174,7 +174,6 @@ async def start_new_giveaway(target_channel_id: int, prize: str, duration_minute
     end_time = datetime.now() + timedelta(minutes=duration_minutes)
     end_timestamp = int(end_time.timestamp())
     
-    # --- PREMIUM EMBED STRUCTURE ---
     embed = discord.Embed(
         title=f"🎉 G I V E A W A Y 🎉",
         description=f"One lucky participant will receive **{prize}**!\n\n"
@@ -185,19 +184,16 @@ async def start_new_giveaway(target_channel_id: int, prize: str, duration_minute
     embed.set_author(name=f"{prize}", icon_url=GIVEAWAY_THUMBNAIL)
     embed.set_thumbnail(url=GIVEAWAY_THUMBNAIL)
     embed.set_image(url=GIVEAWAY_BANNER)
-    # --- END PREMIUM EMBED STRUCTURE ---
 
-    # Send the giveaway message
     giveaway_message = await target_channel.send(content=f"**{EMOJI_ROBUX} NEW EVENT! {EMOJI_ROBUX}**", embed=embed)
     await giveaway_message.add_reaction(EMOJI_GIVEAWAY_REACT)
     
-    # Wait for the duration
     await asyncio.sleep(duration_minutes * 60)
     
     try:
         final_message = await target_channel.fetch_message(giveaway_message.id)
     except:
-        return # Message deleted, end giveaway
+        return
 
     reaction = discord.utils.get(final_message.reactions, emoji=EMOJI_GIVEAWAY_REACT)
     users = []
@@ -225,13 +221,11 @@ async def start_new_giveaway(target_channel_id: int, prize: str, duration_minute
             winner = random.choice(users)
             winner_id_log = "Random"
             
-        # Announce winner
         await target_channel.send(
             f"🎉 **GIVEAWAY ENDED!** 🎉\n"
             f"The winner of the **{prize}** is: {winner.mention} {EMOJI_CROWN_WINNER}"
         )
         
-        # Edit the embed to show the winner
         embed.description = f"**WINNER:** {winner.mention} {EMOJI_CROWN_WINNER}\n\n**ENDED:** <t:{end_timestamp}:T>"
         embed.set_footer(text=f"Giveaway concluded | Rigged ID Log: {winner_id_log}")
         await final_message.edit(embed=embed)
@@ -531,7 +525,6 @@ class PersistentPurchaseButton(discord.ui.View):
 
     @discord.ui.button(label="Start Manual Order", style=discord.ButtonStyle.secondary, custom_id="start_manual_btn", emoji="✍")
     async def manual_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Open the manual order modal directly
         await interaction.response.send_modal(ManualOrderModal())
 
 
@@ -993,7 +986,8 @@ async def send_completed_order(amount, price, method):
     
     embed.set_thumbnail(url="https://i.ibb.co/whbgBHWz/9c5fd434-f30f-4e24-8212-ea40fa098678.png") 
 
-    embed.add_field(name="👤 User", value=f**{user_name}**", inline=True)
+    # FIX: Corrected f-string syntax here: f"**{user_name}**"
+    embed.add_field(name="👤 User", value=f"**{user_name}**", inline=True) 
     embed.add_field(name="💳 Payment Method", value=f"**{method}**", inline=True)
     
     embed.add_field(name=f"{EMOJI_ROBUX} Robux Purchased", value=f"**{amount:,} Robux**", inline=False) 
@@ -1077,12 +1071,35 @@ class PersistentPurchaseButton(discord.ui.View):
 
     @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.blurple, custom_id="purchase_robux_btn")
     async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ... (rest of purchase button logic)
-        pass
+        user_id = interaction.user.id
+        
+        if user_id in active_flows:
+            existing_flow = active_flows[user_id]
+            if not existing_flow.thread.archived:
+                await interaction.response.send_message(
+                    f"{EMOJI_WARNING} You already have an active purchase flow in {existing_flow.thread.mention}!", 
+                    ephemeral=True
+                )
+                return
+
+        await interaction.response.defer(ephemeral=True)
+        thread_name = f"Purchase-{interaction.user.name}-{random.randint(1000,9999)}"
+        info_channel = bot.get_channel(INFO_CHANNEL_ID) or interaction.channel
+        
+        thread = await info_channel.create_thread(
+            name=thread_name,
+            auto_archive_duration=1440,
+            type=discord.ChannelType.private_thread
+        )
+        await thread.add_user(interaction.user)
+        
+        flow = PurchaseFlow(user_id, thread)
+        active_flows[user_id] = flow
+        await flow.send_step(1)
+        await interaction.followup.send(f"Purchase started! Check your new private thread: {thread.mention}", ephemeral=True)
 
     @discord.ui.button(label="Start Manual Order", style=discord.ButtonStyle.secondary, custom_id="start_manual_btn", emoji="✍")
     async def manual_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Open the manual order modal directly
         await interaction.response.send_modal(ManualOrderModal())
 
 
@@ -1229,13 +1246,11 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
     
     try:
-        # FIX: Ensure persistent view re-addition works correctly
         persistent_view = PersistentPurchaseButton()
         bot.add_view(persistent_view)
     except Exception as e:
         print(f"Error adding persistent view: {e}")
     
-    # All necessary embed functions are now defined before this point.
     await send_info_embed()
     await send_price_embed() 
     await send_payment_methods_embed() 
