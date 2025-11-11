@@ -50,7 +50,7 @@ VOUCH_CHANNEL_ID          = 1435516058286035025
 MANUAL_ORDER_CHANNEL_ID   = 1437288464759652513
 
 
-# EMOJIS (ALL EMOJIS RESTORED AND DEFINED HERE FOR GLOBAL ACCESS)
+# EMOJIS (ALL EMOJIS DEFINED HERE FOR GLOBAL ACCESS)
 EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
 EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
 EMOJI_LOADING        = "<a:Loading:1435526855523434576>" 
@@ -919,51 +919,3 @@ async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: 
         await send_tos_embed(force_new=True)
         await interaction.followup.send(f"{EMOJI_VERIFIED} ToS embed sent to the ToS channel.", ephemeral=True)
 # -------------------------------------------------
-
-
-# -------------------------------------------------
-# ADMIN PANEL VIEW (The Interactive Menu)
-# -------------------------------------------------
-class AdminPanel(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=300) 
-
-    @discord.ui.button(label="Set Crypto Address", style=discord.ButtonStyle.blurple, custom_id="admin_set_address", emoji='🪙')
-    async def set_address_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_set_address")
-
-    @discord.ui.button(label="Set Crypto QR URL", style=discord.ButtonStyle.blurple, custom_id="admin_set_qr", emoji="🖼️")
-    async def set_qr_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_set_qr")
-
-    @discord.ui.button(label="Set Discount Code", style=discord.ButtonStyle.blurple, custom_id="admin_set_discount", emoji="🏷️")
-    async def set_discount_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_set_discount")
-
-    @discord.ui.button(label="List/Delete Discounts", style=discord.ButtonStyle.secondary, custom_id="admin_list_discounts", emoji="🗑️")
-    async def list_discounts_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_list_discounts")
-
-    @discord.ui.button(label="Trigger Fake Order", style=discord.ButtonStyle.green, custom_id="admin_fake_order", emoji="🤖")
-    async def fake_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_fake_order")
-
-    @discord.ui.button(label="Start Giveaway", style=discord.ButtonStyle.green, custom_id="admin_start_giveaway", emoji=EMOJI_GIVEAWAY_REACT)
-    async def start_giveaway_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_start_giveaway")
-
-    @discord.ui.button(label="Update Price List", style=discord.ButtonStyle.green, custom_id="admin_set_prices", emoji='💸')
-    async def set_prices_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_set_prices")
-
-    @discord.ui.button(label="Update Payments", style=discord.ButtonStyle.secondary, custom_id="admin_set_payments", emoji="💳")
-    async def set_payments_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_set_payments")
-
-    @discord.ui.button(label="Update ToS", style=discord.ButtonStyle.secondary, custom_id="admin_set_tos", emoji="📜")
-    async def set_tos_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_set_tos")
-
-    @discord.ui.button(label="Reset Info Embed", style=discord.ButtonStyle.red, custom_id="admin_reset_embed", emoji="🔄")
-    async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_reset_embed")
