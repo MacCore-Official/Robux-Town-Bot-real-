@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + STRUCTURAL FIX)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + CONSOLIDATED ADMIN MENU)
 import os
 import asyncio
 import json
@@ -19,7 +19,7 @@ G2A_REWARBLE_LINK = "https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewar
 EMOJI_GIVEAWAY_REACT = "<:giveawaygift:1437688517089165442>"
 EMOJI_CROWN_WINNER   = "👑" 
 GIVEAWAY_THUMBNAIL   = "https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png" 
-EMOJI_GIVEAWAY_BANNER = "https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png"
+GIVEAWAY_BANNER      = "https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png"
 # --------------------------------------------------------
 
 
@@ -183,7 +183,7 @@ async def start_new_giveaway(target_channel_id: int, prize: str, duration_minute
     )
     embed.set_author(name=f"{prize}", icon_url=GIVEAWAY_THUMBNAIL)
     embed.set_thumbnail(url=GIVEAWAY_THUMBNAIL)
-    embed.set_image(url=EMOJI_GIVEAWAY_BANNER) # Corrected to use EMOJI_GIVEAWAY_BANNER constant
+    embed.set_image(url=EMOJI_GIVEAWAY_BANNER)
 
     giveaway_message = await target_channel.send(content=f"**{EMOJI_ROBUX} NEW EVENT! {EMOJI_ROBUX}**", embed=embed)
     await giveaway_message.add_reaction(EMOJI_GIVEAWAY_REACT)
@@ -490,6 +490,90 @@ class CloseTicketView(discord.ui.View):
         else:
             await interaction.response.send_message(f"{EMOJI_WARNING} Could not find the thread.", ephemeral=True)
 
+class PersistentPurchaseButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None) 
+
+    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.blurple, custom_id="purchase_robux_btn")
+    async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+        
+        if user_id in active_flows:
+            existing_flow = active_flows[user_id]
+            if not existing_flow.thread.archived:
+                await interaction.response.send_message(
+                    f"{EMOJI_WARNING} You already have an active purchase flow in {existing_flow.thread.mention}!", 
+                    ephemeral=True
+                )
+                return
+
+        await interaction.response.defer(ephemeral=True)
+        thread_name = f"Purchase-{interaction.user.name}-{random.randint(1000,9999)}"
+        info_channel = bot.get_channel(INFO_CHANNEL_ID) or interaction.channel
+        
+        thread = await info_channel.create_thread(
+            name=thread_name,
+            auto_archive_duration=1440,
+            type=discord.ChannelType.private_thread
+        )
+        await thread.add_user(interaction.user)
+        
+        flow = PurchaseFlow(user_id, thread)
+        active_flows[user_id] = flow
+        await flow.send_step(1)
+        await interaction.followup.send(f"Purchase started! Check your new private thread: {thread.mention}", ephemeral=True)
+
+    @discord.ui.button(label="Start Manual Order", style=discord.ButtonStyle.secondary, custom_id="start_manual_btn", emoji="✍")
+    async def manual_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(ManualOrderModal())
+
+
+# -------------------------------------------------
+# DISCLAIMER EMBED
+# -------------------------------------------------
+async def send_disclaimer_embed(thread: discord.Thread):
+    embed = discord.Embed(
+        title="⚠️ Please Note",
+        description=(
+            "**Please make sure that all conversations related to the deal are done within this ticket.** Failing to do so may put you at risk of being scammed.\n\n"
+            "Our staff will **never DM you** regarding any deals that are active or have already been completed."
+        ),
+        color=0xFFA500 # Orange color for warning
+    )
+    view = CloseTicketView(thread.id)
+    await thread.send(embed=embed, view=view)
+
+# -------------------------------------------------
+# PURCHASE FLOW HELPER
+# -------------------------------------------------
+async def apply_discount(flow, code):
+    """Applies discount to flow.price and flow.discount_code if code is valid."""
+    flow.discount_code = None
+    flow.price = get_price(flow.robux) 
+
+    if code.upper() == "SKIP" or not code:
+        return
+    
+    deal = config["deals"].get(code.upper())
+    
+    if deal:
+        min_r = deal.get("min_robux_required", 0)
+        
+        if flow.robux >= min_r:
+            flow.price = deal["price"]
+            flow.discount_code = code.upper()
+            await flow.thread.send(f"{EMOJI_VERIFIED} Coupon **{code.upper()}** accepted! Your new total price is **${flow.price:.2f} USD**.", delete_after=10)
+        else:
+            await flow.thread.send(f"{EMOJI_WARNING} Coupon invalid. Minimum purchase for this deal is {min_r:,} R$. Using standard pricing.", delete_after=10)
+    else:
+        await flow.thread.send(f"{EMOJI_WARNING} Coupon code `{code}` is invalid. Using standard pricing.", delete_after=10)
+
+
+# -------------------------------------------------
+# PURCHASE FLOW
+# -------------------------------------------------
+active_flows = {}
+
 class PurchaseFlow(discord.ui.View):
     def __init__(self, user_id, thread):
         super().__init__(timeout=None)
@@ -589,7 +673,6 @@ class PurchaseFlow(discord.ui.View):
                 
             select.callback = crypto_callback_wrapper
             view = discord.ui.View(timeout=None)
-            view.add_item(select)
             await interaction.followup.send(embed=embed, view=view)
         else:
             await self.send_payment_invoice(interaction)
