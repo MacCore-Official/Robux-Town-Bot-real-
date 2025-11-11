@@ -46,7 +46,7 @@ STAFF_ROLE_ID             = 1435516057526734991
 STAFF_DM_IDS              = [1422665161466187976,1269145029943758899] 
 PAYMENT_METHOD_CHANNEL_ID = 1435516058105675820 
 TOS_CHANNEL_ID            = 1435516058286035016 
-VOUCH_CHANNEL_ID          = 1435516058286035025 # Example Vouch Channel ID
+VOUCH_CHANNEL_ID          = 1435516058286035025 
 
 
 # EMOJIS (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
@@ -54,9 +54,7 @@ EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
 EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
 EMOJI_LOADING        = "<a:Loading:1435526855523434576>" 
 EMOJI_WARNING        = "<:warning:1435526954689495091>"
-EMOJI_CROWN          = "👑" # Default crown icon
-
-# ... (rest of configuration and emoji definitions)
+EMOJI_CROWN          = "👑" 
 
 # -------------------------------------------------
 # PRICE CALCULATION 
@@ -133,7 +131,22 @@ async def get_crypto_price(crypto: str) -> float:
 # -------------------------------------------------
 # SEND TO STAFF DMs + LOG CHANNEL (Remains the same)
 # -------------------------------------------------
-# ...
+async def send_to_staff(order_data: dict):
+    embed = discord.Embed(title="New Payment Submission", color=0x00A3FF)
+    for k, v in order_data.items():
+        embed.add_field(name=k, value=v, inline=False)
+    
+    for user_id in STAFF_DM_IDS:
+        try:
+            user = await bot.fetch_user(user_id)
+            await user.send(embed=embed)
+        except:
+            print(f"Could not DM staff user {user_id}")
+            pass
+
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if channel:
+        await channel.send(embed=embed)
 
 # -------------------------------------------------
 # GIVEAWAY LOGIC
@@ -206,6 +219,7 @@ async def start_new_giveaway(target_channel_id: int, prize: str, duration_minute
         
         # Edit the embed to show the winner
         embed.description = f"**WINNER:** {winner.mention} {EMOJI_CROWN_WINNER}\n\n**ENDED:** <t:{end_timestamp}:T>"
+        # Log rigging info discreetly in the footer
         embed.set_footer(text=f"Giveaway concluded | Rigged ID Log: {winner_id_log}")
         await final_message.edit(embed=embed)
         
@@ -215,6 +229,38 @@ async def start_new_giveaway(target_channel_id: int, prize: str, duration_minute
 # -------------------------------------------------
 # ADMIN MODALS
 # -------------------------------------------------
+class DiscountModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Set New Discount Code", timeout=600)
+        self.code = discord.ui.TextInput(label="Discount Code (e.g., WINTERDEAL)", placeholder="Must be uppercase, one word")
+        self.amount = discord.ui.TextInput(label="Robux Amount Covered by Deal", placeholder="e.g., 100000 (R$ amount user must buy)")
+        self.price = discord.ui.TextInput(label="Discounted Price in USD", placeholder="e.g., 60.00 (the discounted price)")
+        
+        self.add_item(self.code)
+        self.add_item(self.amount)
+        self.add_item(self.price)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        code = self.code.value.upper()
+        
+        try:
+            amount = int(self.amount.value.replace(",", ""))
+            price = float(self.price.value)
+        except ValueError:
+            await interaction.response.send_message(f"{EMOJI_WARNING} Invalid number format for amount or price.", ephemeral=True)
+            return
+
+        config["deals"][code] = {
+            "robux": amount, 
+            "price": price, 
+            "min_robux_required": amount 
+        }
+        save_config(config)
+        await interaction.response.send_message(
+            f"{EMOJI_VERIFIED} Discount code **{code}** set: {amount:,} R$ for **${price:.2f} USD**.",
+            ephemeral=True
+        )
+
 class GiveawayModal(discord.ui.Modal):
     def __init__(self):
         super().__init__(title="Start New Rigged Giveaway", timeout=600)
@@ -261,7 +307,6 @@ class GiveawayModal(discord.ui.Modal):
              await interaction.followup.send(f"{EMOJI_WARNING} Target Channel ID `{target_id}` not found or is invalid.", ephemeral=True)
              return
 
-        # Call the main giveaway function
         await start_new_giveaway(
             target_id,
             self.prize.value,
@@ -271,39 +316,79 @@ class GiveawayModal(discord.ui.Modal):
         
         await interaction.followup.send(f"{EMOJI_GIVEAWAY_REACT} Giveaway for '{self.prize.value}' initiated in {target_channel.mention}.", ephemeral=True)
 
-class DiscountModal(discord.ui.Modal):
-    def __init__(self):
-        super().__init__(title="Set New Discount Code", timeout=600)
-        self.code = discord.ui.TextInput(label="Discount Code (e.g., WINTERDEAL)", placeholder="Must be uppercase, one word")
-        self.amount = discord.ui.TextInput(label="Robux Amount Covered by Deal", placeholder="e.g., 100000 (R$ amount user must buy)")
-        self.price = discord.ui.TextInput(label="Discounted Price in USD", placeholder="e.g., 60.00 (the discounted price)")
-        
-        self.add_item(self.code)
-        self.add_item(self.amount)
-        self.add_item(self.price)
 
-    async def on_submit(self, interaction: discord.Interaction):
-        code = self.code.value.upper()
+class DeleteDiscountView(discord.ui.Select):
+    def __init__(self, discounts):
+        options = [
+            discord.SelectOption(
+                label=f"{code} ({details['robux']:,} R$ for ${details['price']:.2f})",
+                value=code
+            ) for code, details in discounts.items()
+        ]
+        super().__init__(placeholder="Select code to DELETE permanently", options=options, min_values=1, max_values=1)
         
-        try:
-            amount = int(self.amount.value.replace(",", ""))
-            price = float(self.price.value)
-        except ValueError:
-            await interaction.response.send_message(f"{EMOJI_WARNING} Invalid number format for amount or price.", ephemeral=True)
+    async def callback(self, interaction: discord.Interaction):
+        code_to_delete = self.values[0]
+        
+        if code_to_delete in config['deals']:
+            del config['deals'][code_to_delete]
+            save_config(config)
+            await interaction.response.send_message(
+                f"🗑️ Discount code **{code_to_delete}** has been successfully deleted.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(f"{EMOJI_WARNING} Code not found.", ephemeral=True)
+
+
+class DiscountListModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Active Discounts", timeout=None)
+        
+        active_deals = config.get("deals", {})
+        
+        if not active_deals:
+            self.add_item(discord.ui.TextInput(
+                label="No Active Discounts Found.", 
+                default="Please use 'Set Discount Code' first.",
+                style=discord.TextStyle.paragraph, 
+                required=False,
+                disabled=True
+            ))
             return
 
-        config["deals"][code] = {
-            "robux": amount, 
-            "price": price, 
-            "min_robux_required": amount 
-        }
-        save_config(config)
+        self.add_item(discord.ui.TextInput(
+            label=f"Listing {len(active_deals)} Active Discounts:",
+            default="\n".join([f"  - {code}: {details['robux']:,} R$ for ${details['price']:.2f}" for code, details in active_deals.items()]),
+            style=discord.TextStyle.paragraph,
+            required=False,
+            disabled=True
+        ))
+        
+        self.active_deals = active_deals
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not self.active_deals:
+            await interaction.response.send_message("No discounts to delete.", ephemeral=True)
+            return
+
         await interaction.response.send_message(
-            f"{EMOJI_VERIFIED} Discount code **{code}** set: {amount:,} R$ for **${price:.2f} USD**.",
+            "Select the code you wish to delete permanently:",
+            view=discord.ui.View().add_item(DeleteDiscountView(self.active_deals)),
             ephemeral=True
         )
-        
+
 # ... (Other Modals: PaymentModal, AddressModal, QRModal remain the same) ...
+
+# -------------------------------------------------
+# CLOSE TICKET VIEW (Remains the same)
+# -------------------------------------------------
+# ...
+
+# -------------------------------------------------
+# DISCLAIMER EMBED (Remains the same)
+# -------------------------------------------------
+# ...
 
 # -------------------------------------------------
 # PURCHASE FLOW HELPER (Remains the same)
@@ -377,8 +462,9 @@ async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: 
         await interaction.followup.send(f"{EMOJI_VERIFIED} Fake order triggered to the completion channel.", ephemeral=True)
     elif cid == "admin_set_discount":
         await interaction.response.send_modal(DiscountModal())
+    elif cid == "admin_list_discounts": # <-- NEW HANDLER
+        await interaction.response.send_modal(DiscountListModal())
     elif cid == "admin_start_giveaway":
-        # Handled by modal submission logic
         if not isinstance(interaction.channel, discord.TextChannel):
             await interaction.response.send_message(f"{EMOJI_WARNING} Please run this in a regular text channel.", ephemeral=True)
             return
@@ -423,6 +509,10 @@ class AdminPanel(discord.ui.View):
     async def set_discount_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_set_discount")
 
+    @discord.ui.button(label="List/Delete Discounts", style=discord.ButtonStyle.secondary, custom_id="admin_list_discounts", emoji="🗑️") # <-- NEW BUTTON
+    async def list_discounts_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_list_discounts")
+
     @discord.ui.button(label="Trigger Fake Order", style=discord.ButtonStyle.green, custom_id="admin_fake_order", emoji="🤖")
     async def fake_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_fake_order")
@@ -455,7 +545,13 @@ class AdminPanel(discord.ui.View):
 async def on_ready():
     print(f"Logged in as {bot.user}")
     
-    bot.add_view(PersistentPurchaseButton())
+    # FIX: Using try/except block to handle persistent view re-addition safely
+    try:
+        # Instantiate the view using the class name before adding it
+        persistent_view = PersistentPurchaseButton()
+        bot.add_view(persistent_view)
+    except Exception as e:
+        print(f"Error adding persistent view: {e}")
     
     await send_info_embed()
     await send_price_embed() 
@@ -465,9 +561,8 @@ async def on_ready():
     if not automated_fake_completion_loop.is_running():
         automated_fake_completion_loop.start()
 
-
 # -------------------------------------------------
-# RUN
+# RUN (Remains the same)
 # -------------------------------------------------
 if __name__ == "__main__":
     if BOT_TOKEN == "YOUR_DISCORD_BOT_TOKEN_HERE":
