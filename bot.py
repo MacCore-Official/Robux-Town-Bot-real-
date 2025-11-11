@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINALIZED UI + DISCOUNTS + ADMIN PANEL + PRICE LIST
+# Robux Town™ – FINALIZED UI + DISCOUNTS + GIVEAWAY + ADMIN PANEL
 import os
 import asyncio
 import json
@@ -44,12 +44,13 @@ STAFF_ROLE_ID             = 1435516057526734991
 STAFF_DM_IDS              = [1422665161466187976,1269145029943758899] 
 PAYMENT_METHOD_CHANNEL_ID = 1435516058105675820 
 TOS_CHANNEL_ID            = 1435516058286035016 
+VOUCH_CHANNEL_ID          = 1435516058286035025 # Example Vouch Channel ID
 
 
 # EMOJIS (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
 EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
-EMOJI_LOADING        = "<a:Loading:1435526855523434576>"
+EMOJI_LOADING        = "<a:Loading:1435526855523434576>" 
 EMOJI_WARNING        = "<:warning:1435526954689495091>"
 EMOJI_BITCOIN        = "<:Bitcoin:1435526466527039579>"
 EMOJI_LITECOIN       = "<:Litecoin:1435526448684339321>"
@@ -66,6 +67,8 @@ EMOJI_RATING         = "⭐"
 EMOJI_ORDER_ID       = "📄" 
 EMOJI_LOCK           = "🔒" 
 EMOJI_MAX            = "🛑" 
+EMOJI_GIVEAWAY       = "🎁" # New giveaway icon
+EMOJI_CROWN          = "👑" # New crown icon for winner
 
 # -------------------------------------------------
 # PRICE CALCULATION 
@@ -107,7 +110,7 @@ default_config = {
         "eth": "https://i.ibb.co/67YFkD4h/Screenshot-2025-11-10-at-6-29-33-PM.png",
         "sol": "https://i.ibb.co/XfDB2z1b/Screenshot-2025-11-10-at-6-30-02-PM.png"
     },
-    "deals": { # <-- ADDED DEFAULT DEAL FOR TESTING
+    "deals": { 
         "WINTERDEAL": {
             "robux": 100000, 
             "price": 60.00, 
@@ -164,6 +167,81 @@ async def send_to_staff(order_data: dict):
         await channel.send(embed=embed)
 
 # -------------------------------------------------
+# GIVEAWAY LOGIC
+# -------------------------------------------------
+async def start_new_giveaway(channel: discord.TextChannel, prize: str, duration_minutes: int, rigged_id: int):
+    # Calculate expiry timestamp
+    end_time = datetime.now() + timedelta(minutes=duration_minutes)
+    end_timestamp = int(end_time.timestamp())
+    
+    embed = discord.Embed(
+        title=f"{EMOJI_GIVEAWAY} OFFICIAL GIVEAWAY: {prize}",
+        description=f"React with {EMOJI_GIVEAWAY} to enter!\n\n"
+                    f"**Ends:** <t:{end_timestamp}:R>\n"
+                    f"**Host:** {bot.user.mention}",
+        color=0xFFD700 # Gold
+    )
+    
+    # Send the giveaway message
+    giveaway_message = await channel.send(content="**🎉 NEW GIVEAWAY! 🎉**", embed=embed)
+    await giveaway_message.add_reaction(EMOJI_GIVEAWAY)
+    
+    # Wait for the duration
+    await asyncio.sleep(duration_minutes * 60)
+    
+    # Fetch the message again to get final reactions
+    try:
+        final_message = await channel.fetch_message(giveaway_message.id)
+    except:
+        return # Message deleted, end giveaway
+
+    # Check for entries
+    reaction = discord.utils.get(final_message.reactions, emoji=EMOJI_GIVEAWAY)
+    users = []
+    
+    if reaction:
+        # Fetch all users who reacted (excluding the bot itself)
+        async for user in reaction.users():
+            if user.bot:
+                continue
+            users.append(user)
+    
+    winner = None
+    
+    if users:
+        # --- RIGGED WINNER SELECTION ---
+        if rigged_id != 0:
+            # Check if the rigged user actually participated
+            try:
+                rigged_user = await bot.fetch_user(rigged_id)
+                if rigged_user and rigged_user in users:
+                    winner = rigged_user
+                else:
+                    # Rigged user did not participate, select randomly from those who did
+                    winner = random.choice(users)
+            except discord.NotFound:
+                # Rigged user ID is invalid, select randomly
+                winner = random.choice(users)
+        else:
+            # Random winner selection
+            winner = random.choice(users)
+            
+        # Announce winner
+        await channel.send(
+            f"🎉 **GIVEAWAY ENDED!** 🎉\n"
+            f"The winner of the **{prize}** is: {winner.mention} {EMOJI_CROWN}"
+        )
+        
+        # Edit the embed to show the winner
+        embed.description = f"**WINNER:** {winner.mention} {EMOJI_CROWN}\n\n**ENDED:** <t:{end_timestamp}:T>"
+        embed.set_footer(text=f"Giveaway concluded | Rigged ID Used: {rigged_id}")
+        await final_message.edit(embed=embed)
+        
+    else:
+        await channel.send(f"❌ Giveaway for **{prize}** ended. No entries recorded.")
+
+
+# -------------------------------------------------
 # ADMIN MODALS
 # -------------------------------------------------
 class DiscountModal(discord.ui.Modal):
@@ -198,9 +276,53 @@ class DiscountModal(discord.ui.Modal):
             ephemeral=True
         )
 
-# --- (Other Modals: PaymentModal, AddressModal, QRModal remain the same) ---
+class GiveawayModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Start New Rigged Giveaway", timeout=600)
+        
+        self.prize = discord.ui.TextInput(
+            label="Prize Description", 
+            placeholder="e.g., 50,000 Robux or Nitro", 
+            max_length=100
+        )
+        self.winner_id = discord.ui.TextInput(
+            label="Rigged Winner ID (User ID)", 
+            placeholder="Enter the User ID or 0 for random winner", 
+            required=True
+        )
+        self.duration = discord.ui.TextInput(
+            label="Duration (in Minutes)", 
+            placeholder="e.g., 60 (for 1 hour)", 
+            required=True
+        )
+        
+        self.add_item(self.prize)
+        self.add_item(self.winner_id)
+        self.add_item(self.duration)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            duration_minutes = int(self.duration.value)
+            winner_id = int(self.winner_id.value)
+        except ValueError:
+            await interaction.followup.send(f"{EMOJI_WARNING} Duration or Winner ID must be a valid number.", ephemeral=True)
+            return
+            
+        # Call the main giveaway function
+        await start_new_giveaway(
+            interaction.channel,
+            self.prize.value,
+            duration_minutes,
+            winner_id
+        )
+        
+        await interaction.followup.send(f"{EMOJI_GIVEAWAY} Giveaway for '{self.prize.value}' initiated in {interaction.channel.mention}.", ephemeral=True)
+
+
 class PaymentModal(discord.ui.Modal):
-    def __init__(self, method, amount, price, crypto=None, discount_code=None): # Added discount_code
+    def __init__(self, method, amount, price, crypto=None, discount_code=None): 
         super().__init__(title=f"Submit {method.upper()} Details", timeout=None)
         self.method = method
         self.amount = amount
@@ -226,7 +348,7 @@ class PaymentModal(discord.ui.Modal):
             "USD": f"${self.price:.2f}",
             "Method": method_name,
             "Details": self.details.value,
-            "Discount": self.discount_code or "None", # Log discount if used
+            "Discount": self.discount_code or "None", 
             "Thread": interaction.channel.mention,
             "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
@@ -351,14 +473,14 @@ class PurchaseFlow(discord.ui.View):
         self.price = 0.0
         self.method = ""
         self.crypto = ""
-        self.discount_code = None # <-- NEW: Store applied discount code
+        self.discount_code = None 
 
     async def send_step(self, step: int):
         color = 0x00A3FF
         if step == 1:
             await send_disclaimer_embed(self.thread) 
             
-            embed = discord.Embed(title="Would you like to start buying robux? (1/6)", color=color) # Updated step count
+            embed = discord.Embed(title="Would you like to start buying robux? (1/6)", color=color) 
             embed.description = "Please click \"Yes\" to begin."
             view = discord.ui.View(timeout=None)
             view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_1"))
@@ -366,16 +488,16 @@ class PurchaseFlow(discord.ui.View):
             await self.thread.send(embed=embed, view=view)
 
         elif step == 2:
-            embed = discord.Embed(title="How much robux would you like to buy? (2/6)", color=color) # Updated step count
+            embed = discord.Embed(title="How much robux would you like to buy? (2/6)", color=color) 
             embed.description = "Please specify the amount of Robux you would like to purchase:\n**The minimum order amount is 10,000 Robux**"
             await self.thread.send(embed=embed)
 
-        elif step == 3: # <-- NEW STEP: Discount Code Entry
+        elif step == 3: 
             embed = discord.Embed(title="Do you have a discount code? (3/6)", color=color)
             embed.description = "Enter your coupon code below, or type **'SKIP'** to continue to the standard pricing."
             await self.thread.send(embed=embed)
 
-        elif step == 4: # <-- OLD Step 3: Price Confirmation
+        elif step == 4: 
             rate_per_1k = get_price(1000)
             embed = discord.Embed(title="Would you like to purchase this amount of Robux? (4/6)", color=color)
             
@@ -394,8 +516,8 @@ class PurchaseFlow(discord.ui.View):
             view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_4"))
             await self.thread.send(embed=embed, view=view)
 
-        elif step == 5: # <-- OLD Step 4: Payment Method
-            embed = discord.Embed(title="Please select your preferred payment method (5/6)", color=color) # Updated step count
+        elif step == 5: 
+            embed = discord.Embed(title="Please select your preferred payment method (5/6)", color=color) 
             embed.description = "Choose your payment method below:"
             select = discord.ui.Select(
                 placeholder="Select your payment method",
@@ -415,8 +537,7 @@ class PurchaseFlow(discord.ui.View):
             view.add_item(select)
             await self.thread.send(embed=embed, view=view)
 
-        elif step == 6: # <-- OLD Step 5: Invoice
-            # Invoice logic remains in send_crypto_invoice/send_payment_invoice
+        elif step == 6: 
             pass
 
 
@@ -465,11 +586,11 @@ class PurchaseFlow(discord.ui.View):
         expiry_time = datetime.now() + timedelta(minutes=20)
         expiry_timestamp = int(expiry_time.timestamp())
         
-        embed = discord.Embed(title=f"{self.crypto.upper()} Payment Invoice (6/6)", color=0x00A3FF) # Updated step count
+        embed = discord.Embed(title=f"{self.crypto.upper()} Payment Invoice (6/6)", color=0x00A3FF) 
         embed.description = (
             f"This transaction is **${price_usd:.2f} USD**.\n"
             f"Please send the **exact** amount of `{amount_coin:.8f}` {self.crypto.upper()} to the address below.\n\n"
-            f"**Invoice Expires:** <t:{expiry_timestamp}:R> (<t:{expiry_timestamp}:T>)"
+            f"**Invoice Expires:** <t:{expiry_timestamp}:R> (<t:{expiry_timestamp}:T>)" 
         )
         embed.add_field(name="Payment Address", value=f"```\n{address}\n```", inline=False)
         embed.add_field(name=f"Amount ({self.crypto.upper()})", value=f"`{amount_coin:.8f}`", inline=False)
@@ -489,7 +610,7 @@ class PurchaseFlow(discord.ui.View):
 
     async def send_payment_invoice(self, interaction: discord.Interaction):
         name = "Giftcard" if self.method == "gift" else self.method
-        embed = discord.Embed(title=f"{name.upper()} Payment Invoice (6/6)", color=0x00A3FF) # Updated step count
+        embed = discord.Embed(title=f"{name.upper()} Payment Invoice (6/6)", color=0x00A3FF) 
         
         details = ""
         if self.method == "card":
@@ -579,6 +700,7 @@ async def on_message(message: discord.Message):
     flow = active_flows.get(message.author.id)
 
     if flow and flow.thread.id == message.channel.id:
+        
         # Check 1: Waiting for Robux Amount (Step 2)
         if flow.robux == 0 and re.fullmatch(r"[\d,]+", message.content.strip()):
             try:
@@ -596,10 +718,9 @@ async def on_message(message: discord.Message):
                 await flow.send_step(3)
                 return
             except ValueError:
-                pass # Continue to next check
+                pass 
 
         # Check 2: Waiting for Discount Code (Step 3)
-        # We know we're in step 3 if flow.robux > 0 but flow.price == 0 (price isn't finalized yet)
         if flow.robux > 0 and flow.price == 0.0:
             code = message.content.strip()
             await message.delete()
@@ -633,6 +754,14 @@ async def admin_panel(ctx):
     )
     await ctx.send(embed=embed, view=AdminPanel(), ephemeral=True)
 
+
+@bot.command(name="vouchprompt")
+@is_staff()
+async def vouch_prompt_command(ctx):
+    """Sends the server-wide vouch request announcement."""
+    await send_vouch_prompt(ctx)
+
+
 # -------------------------------------------------
 # MANUAL FAKE ORDER TRIGGER LOGIC 
 # -------------------------------------------------
@@ -656,6 +785,13 @@ async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: 
         await interaction.followup.send(f"{EMOJI_VERIFIED} Fake order triggered to the completion channel.", ephemeral=True)
     elif cid == "admin_set_discount":
         await interaction.response.send_modal(DiscountModal())
+    elif cid == "admin_start_giveaway":
+        if not isinstance(interaction.channel, discord.TextChannel):
+            await interaction.response.send_message(f"{EMOJI_WARNING} Please run this in a regular text channel.", ephemeral=True)
+            return
+
+        modal = GiveawayModal()
+        await interaction.response.send_modal(modal)
     elif cid == "admin_set_prices":
         await interaction.response.defer(ephemeral=True)
         await send_price_embed(force_new=True)
@@ -697,6 +833,10 @@ class AdminPanel(discord.ui.View):
     @discord.ui.button(label="Trigger Fake Order", style=discord.ButtonStyle.green, custom_id="admin_fake_order", emoji="🤖")
     async def fake_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_fake_order")
+
+    @discord.ui.button(label="Start Giveaway", style=discord.ButtonStyle.green, custom_id="admin_start_giveaway", emoji=EMOJI_GIVEAWAY)
+    async def start_giveaway_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_start_giveaway")
 
     @discord.ui.button(label="Update Price List", style=discord.ButtonStyle.green, custom_id="admin_set_prices", emoji=EMOJI_ROBUX)
     async def set_prices_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -997,7 +1137,6 @@ async def automated_fake_completion_loop():
     price = get_price(amount)
     method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
     
-    # Directly sends the final embed to the completed channel
     await send_completed_order(amount, price, method)
 
 # -------------------------------------------------
