@@ -984,7 +984,6 @@ async def send_completed_order(amount, price, method):
     
     embed.set_thumbnail(url="https://i.ibb.co/whbgBHWz/9c5fd434-f30f-4e24-8212-ea40fa098678.png") 
 
-    # FIX: Corrected f-string syntax here: value=f"**{user_name}**"
     embed.add_field(name="👤 User", value=f"**{user_name}**", inline=True) 
     embed.add_field(name="💳 Payment Method", value=f"**{method}**", inline=True)
     
@@ -1215,3 +1214,18 @@ async def on_ready():
     
     if not automated_fake_completion_loop.is_running():
         automated_fake_completion_loop.start()
+
+# -------------------------------------------------
+# RUN
+# -------------------------------------------------
+if __name__ == "__main__":
+    if BOT_TOKEN == "YOUR_DISCORD_BOT_TOKEN_HERE":
+        print("--- WARNING ---")
+        print("Please replace 'YOUR_DISCORD_BOT_TOKEN_HERE' with your actual bot token.")
+        print("The bot will not start correctly without a valid token.")
+    try:
+        bot.run(BOT_TOKEN)
+    except discord.LoginFailure:
+        print("Error: The provided BOT_TOKEN is invalid. Please check your token.")
+    except Exception as e:
+        print(f"An unexpected error occurred during bot startup: {e}")
