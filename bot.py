@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + ALL EMOJIS)
 import os
 import asyncio
 import json
@@ -50,7 +50,7 @@ VOUCH_CHANNEL_ID          = 1435516058286035025
 MANUAL_ORDER_CHANNEL_ID   = 1437288464759652513
 
 
-# EMOJIS (ALL EMOJIS DEFINED HERE FOR GLOBAL ACCESS)
+# EMOJIS (ALL EMOJIS RESTORED AND DEFINED HERE FOR GLOBAL ACCESS)
 EMOJI_ROBUX          = "<:Robux:1435526693472178176>"
 EMOJI_VERIFIED       = "<:Verified:1435526918891110551>"
 EMOJI_LOADING        = "<a:Loading:1435526855523434576>" 
@@ -645,7 +645,7 @@ class PurchaseFlow(discord.ui.View):
             select.callback = payment_callback_wrapper
             view = discord.ui.View(timeout=None)
             view.add_item(select)
-            await self.thread.send(embed=embed, view=view)
+            await interaction.followup.send(embed=embed, view=view)
 
         elif step == 6: 
             pass
@@ -754,7 +754,6 @@ async def on_interaction(interaction: discord.Interaction):
     user_id = interaction.user.id
     flow = active_flows.get(user_id)
 
-    # --- PURCHASE FLOW BUTTONS (Updated step IDs) ---
     if cid.startswith("flow_") and flow:
         if cid == "flow_yes_1":
             await interaction.response.defer()
@@ -785,10 +784,9 @@ async def on_interaction(interaction: discord.Interaction):
             )
             await thread.add_user(interaction.user)
             new_flow = PurchaseFlow(interaction.user.id, thread)
-            active_flows[interaction.user.id] = new_flow
+            active_flows[user_id] = new_flow
             await new_flow.send_step(1)
     
-    # --- SUBMISSION BUTTONS ---
     elif cid == "submit_tx" and flow:
         modal = PaymentModal("Cryptocurrency", flow.robux, flow.price, flow.crypto, flow.discount_code)
         await interaction.response.send_modal(modal)
@@ -969,307 +967,3 @@ class AdminPanel(discord.ui.View):
     @discord.ui.button(label="Reset Info Embed", style=discord.ButtonStyle.red, custom_id="admin_reset_embed", emoji="🔄")
     async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_reset_embed")
-
-
-# -------------------------------------------------
-# COMPLETION LOGIC
-# -------------------------------------------------
-async def send_completed_order(amount, price, method):
-    channel = bot.get_channel(COMPLETED_CHANNEL_ID)
-    if not channel: return
-    
-    order_id = str(int(time.time() * 1000))[4:] + str(random.randint(100, 999)) 
-    user_name = "Hidden" 
-    rating_stars = "⭐⭐⭐⭐ (4/5)" 
-    
-    embed = discord.Embed(title=f"✅ New Completed Order", color=0x38B750) 
-    
-    embed.set_thumbnail(url="https://i.ibb.co/whbgBHWz/9c5fd434-f30f-4e24-8212-ea40fa098678.png") 
-
-    # FIX: Corrected f-string syntax here: f"**{user_name}**"
-    embed.add_field(name="👤 User", value=f"**{user_name}**", inline=True) 
-    embed.add_field(name="💳 Payment Method", value=f"**{method}**", inline=True)
-    
-    embed.add_field(name=f"{EMOJI_ROBUX} Robux Purchased", value=f"**{amount:,} Robux**", inline=False) 
-    embed.add_field(name="💶 USD Spent", value=f"**${price:.2f}**", inline=True)
-    embed.add_field(name="⭐ Rating", value=rating_stars, inline=True)
-    
-    embed.add_field(name="📄 Order ID", value=f"`{order_id}`", inline=False)
-    
-    embed.set_footer(text=f"Powered by Robux Town • discord.gg/robuxtown • {datetime.now().strftime('%B %d, %Y at %H:%M UTC')} ")
-    
-    await channel.send(embed=embed)
-
-# -------------------------------------------------
-# PRICE LIST EMBED 
-# -------------------------------------------------
-async def send_price_embed(force_new: bool = False):
-    channel = bot.get_channel(PRICE_CHANNEL_ID)
-    if not channel:
-        print("Price channel not found!")
-        return
-    
-    embed = discord.Embed(
-        title="📢 Robux Town | Information:",
-        description=(
-            f"**Welcome to Robux Town!** We pride ourselves on fast, reliable delivery and industry-low prices. We are currently accepting orders up to **800,000** {EMOJI_ROBUX}.\n\n"
-            f"• You will not get **Banned** for buying robux from us.\n"
-            f"• Robux is delivered via **Gamepass**.\n"
-            f"• Max Purchase Limit: **800,000** {EMOJI_ROBUX} {EMOJI_MAX}\n"
-        ),
-        color=0x2E639A
-    )
-    embed.set_thumbnail(url="https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png")
-
-    products_list = []
-    
-    products_list.append("**Most Popular** 🔥")
-    products_list.extend([
-        f"• {EMOJI_ROBUX} **{p['label']}** | **${p['price']:.2f}**"
-        for r, p in ROBUX_PRODUCTS.items() if p['style'] == 'fire'
-    ])
-    
-    products_list.append("\n**Best Deal** 💰")
-    products_list.extend([
-        f"• {EMOJI_ROBUX} **{p['label']}** | **${p['price']:.2f}**"
-        for r, p in ROBUX_PRODUCTS.items() if p['style'] == 'deal'
-    ])
-    
-    products_list.append("\n**Other Packages**")
-    products_list.extend([
-        f"• {EMOJI_ROBUX} **{p['label']}** | **${p['price']:.2f}**"
-        for r, p in ROBUX_PRODUCTS.items() if p['style'] == 'default'
-    ])
-
-    products_field_value = "\n".join(products_list)
-    
-    embed.add_field(name=f"{EMOJI_ROBUX} **Available Packages**:", 
-                    value=products_field_value, 
-                    inline=False)
-    
-    embed.set_image(url="https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png") 
-
-    try:
-        if not force_new:
-            messages = [m async for m in channel.history(limit=5)]
-            for msg in messages:
-                if msg.author == bot.user and msg.embeds and "Robux Town | Information:" in msg.embeds[0].title:
-                    print("Existing Price embed found and preserved.")
-                    return
-    except Exception as e:
-        print(f"Error checking for existing price embed: {e}")
-
-    await channel.send(embed=embed)
-    print("Price List embed sent.")
-
-# -------------------------------------------------
-# PERSISTENT PURCHASE BUTTON
-# -------------------------------------------------
-class PersistentPurchaseButton(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)  # REQUIRED
-
-    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.blurple, custom_id="purchase_robux_btn")
-    async def purchase(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user_id = interaction.user.id
-        
-        if user_id in active_flows:
-            existing_flow = active_flows[user_id]
-            if not existing_flow.thread.archived:
-                await interaction.response.send_message(
-                    f"{EMOJI_WARNING} You already have an active purchase flow in {existing_flow.thread.mention}!", 
-                    ephemeral=True
-                )
-                return
-
-        await interaction.response.defer(ephemeral=True)
-        thread_name = f"Purchase-{interaction.user.name}-{random.randint(1000,9999)}"
-        info_channel = bot.get_channel(INFO_CHANNEL_ID) or interaction.channel
-        
-        thread = await info_channel.create_thread(
-            name=thread_name,
-            auto_archive_duration=1440,
-            type=discord.ChannelType.private_thread
-        )
-        await thread.add_user(interaction.user)
-        
-        flow = PurchaseFlow(user_id, thread)
-        active_flows[user_id] = flow
-        await flow.send_step(1)
-        await interaction.followup.send(f"Purchase started! Check your new private thread: {thread.mention}", ephemeral=True)
-
-    @discord.ui.button(label="Start Manual Order", style=discord.ButtonStyle.secondary, custom_id="start_manual_btn", emoji="✍")
-    async def manual_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ManualOrderModal())
-
-
-# -------------------------------------------------
-# INFO EMBED 
-# -------------------------------------------------
-async def send_info_embed(force_new: bool = False):
-    channel = bot.get_channel(INFO_CHANNEL_ID)
-    if not channel:
-        print("Info channel not found! Cannot send info embed.")
-        return
-
-    embed = discord.Embed(color=0x00A3FF)
-    embed.set_author(name="Robux Town™", icon_url="https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png")
-    embed.description = (
-        "**Automated Purchase**\nSecure, instant Robux delivery.\n\n"
-        "**Under 10 Minutes**\nRobux delivered via Gamepass.\n\n"
-        "**Smart Payments**\nFully automated.\n\n"
-        "**Bank-Level Security**\nYou will NOT get banned.\n\n"
-        "**Payment Options**\n"
-        f"• 🪙 Crypto (BTC/LTC/ETH/SOL)\n"
-        f"• 💳 Card (G2A)\n"
-        f"• 💵 PayPal (Eneba)\n"
-        f"• 🎁 Giftcards\n\n"
-        f"{EMOJI_ROBUX} **Rate:** **${ROBUX_RATE_PER_1000:.2f}** per 1,000 Robux"
-    )
-    embed.set_image(url="https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png")
-
-    try:
-        if not force_new:
-            messages = [m async for m in channel.history(limit=5)]
-            for msg in messages:
-                if msg.author == bot.user and msg.components and not force_new:
-                    print("Existing Info embed found and preserved.")
-                    return
-    except Exception as e:
-        print(f"Error checking for existing info embed: {e}")
-
-    view = PersistentPurchaseButton()
-    await channel.send(embed=embed, view=view)
-    print("Info embed sent (BLUE BORDER)")
-
-# -------------------------------------------------
-# TERMS OF SERVICE EMBED (NEW)
-# -------------------------------------------------
-async def send_tos_embed(force_new: bool = False):
-    channel = bot.get_channel(TOS_CHANNEL_ID)
-    if not channel:
-        print("ToS channel not found!")
-        return
-    
-    embed = discord.Embed(
-        title="📜 Robux Town Terms of Service",
-        description="By using our services, you agree to the following terms:",
-        color=0x404040
-    )
-
-    embed.add_field(
-        name="1. Delivery and Tax",
-        value="All Robux is delivered via Gamepass. Roblox takes a 30% tax, which is calculated into your final price.",
-        inline=False
-    )
-    embed.add_field(
-        name="2. Refunds",
-        value="Refunds are **not guaranteed** after payment submission. Disputes may result in a permanent ban.",
-        inline=False
-    )
-    embed.add_field(
-        name="3. Safety",
-        value="We guarantee **zero bans** related to our service. Your account safety is our priority.",
-        inline=False
-    )
-    embed.set_footer(text="Last Updated: November 2025")
-    
-    if not force_new:
-        try:
-            if [m async for m in channel.history(limit=1)]: return
-        except: pass
-
-    await channel.send(embed=embed)
-    print("ToS embed sent.")
-
-# -------------------------------------------------
-# PAYMENT METHODS EMBED (NEW)
-# -------------------------------------------------
-async def send_payment_methods_embed(force_new: bool = False):
-    channel = bot.get_channel(PAYMENT_METHOD_CHANNEL_ID)
-    if not channel:
-        print("Payment Method channel not found!")
-        return
-    
-    embed = discord.Embed(
-        title="💳 Accepted Payment Methods",
-        description="We offer fully automated payment processing for instant Robux delivery.",
-        color=0x00A3FF
-    )
-    
-    embed.add_field(
-        name="1. 🪙 Cryptocurrency",
-        value="**Instant Confirmation:** Bitcoin (BTC), Litecoin (LTC), Ethereum (ETH), Solana (SOL).",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="2. 💳 Card (via G2A Rewarble)",
-        value=f"Purchase a **Rewarble Card on G2A** and submit the code. [G2A Link]({G2A_REWARBLE_LINK})",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="3. 💵 PayPal (via Eneba Rewarble)",
-        value=f"Purchase a **Rewarble Card on Eneba** using PayPal/Card and submit the code. [Eneba Link]({ENEBA_REWARBLE_LINK})",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="4. 🎁 Giftcards",
-        value="We accept various gift cards on request. Please start a purchase flow to see current accepted gift cards.",
-        inline=False
-    )
-
-    if not force_new:
-        try:
-            if [m async for m in channel.history(limit=1)]: return
-        except: pass
-
-    await channel.send(embed=embed)
-    print("Payment Methods embed sent.")
-
-# -------------------------------------------------
-# STARTUP/TASKS
-# -------------------------------------------------
-
-@tasks.loop(hours=random.uniform(5, 10))
-async def automated_fake_completion_loop():
-    amount = random.choice([10000, 25000, 50000, 100000, 250000])
-    price = get_price(amount)
-    method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
-    
-    await send_completed_order(amount, price, method)
-
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
-    
-    try:
-        persistent_view = PersistentPurchaseButton()
-        bot.add_view(persistent_view)
-    except Exception as e:
-        print(f"Error adding persistent view: {e}")
-    
-    await send_info_embed()
-    await send_price_embed() 
-    await send_payment_methods_embed() 
-    await send_tos_embed()             
-    
-    if not automated_fake_completion_loop.is_running():
-        automated_fake_completion_loop.start()
-
-# -------------------------------------------------
-# RUN
-# -------------------------------------------------
-if __name__ == "__main__":
-    if BOT_TOKEN == "YOUR_DISCORD_BOT_TOKEN_HERE":
-        print("--- WARNING ---")
-        print("Please replace 'YOUR_DISCORD_BOT_TOKEN_HERE' with your actual bot token.")
-        print("The bot will not start correctly without a valid token.")
-    try:
-        bot.run(BOT_TOKEN)
-    except discord.LoginFailure:
-        print("Error: The provided BOT_TOKEN is invalid. Please check your token.")
-    except Exception as e:
-        print(f"An unexpected error occurred during bot startup: {e}")
