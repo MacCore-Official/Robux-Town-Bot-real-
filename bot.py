@@ -283,7 +283,40 @@ async def on_message(message: discord.Message):
                         return await bot.process_commands(message)
                 except:
                     pass
+# === ADD THIS IN `on_message` (BEFORE PURCHASE FLOW) ===
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return await bot.process_commands(message)
 
+    # === DISCOUNT VIA MESSAGE (STAFF) ===
+    if STAFF_ROLE_ID in [r.id for r in message.author.roles]:
+        content = message.content.strip()
+        if "," in content and len(content.split(",")) == 3:
+            code, robux_str, price_str = [x.strip() for x in content.split(",", 2)]
+            if code.isalnum() and len(code) >= 3:
+                try:
+                    robux = int(robux_str.replace(",", ""))
+                    price = float(price_str)
+                    if robux >= 10000 and price > 0:
+                        config["deals"][code.upper()] = {
+                            "robux": robux,
+                            "price": price,
+                            "min_robux_required": robux
+                        }
+                        save_config(config)
+                        embed = discord.Embed(title="Discount Code Added", color=0x00FF00)
+                        embed.add_field(name="Code", value=f"**{code.upper()}**", inline=True)
+                        embed.add_field(name="Robux", value=f"{robux:,}", inline=True)
+                        embed.add_field(name="Price", value=f"${price:.2f}", inline=True)
+                        await message.reply(embed=embed, delete_after=30)
+                        await message.delete(delay=30)
+                        return await bot.process_commands(message)
+                except:
+                    pass
+
+    # === REST OF YOUR on_message (PURCHASE FLOW) ===
+    # ... keep your existing code below ...
     # === PURCHASE FLOW MESSAGES ===
     if not message.channel.name.startswith("Purchase-"):
         return await bot.process_commands(message)
@@ -499,47 +532,8 @@ async def on_interaction(interaction: discord.Interaction):
         await interaction.response.send_modal(modal)
 
 # -------------------------------------------------
-# ADMIN PANEL
+# ADMIN PANEL (FULLY FIXED + SETTINGS BUTTON + ALL EMOJIS)
 # -------------------------------------------------
-def is_staff():
-    async def predicate(ctx):
-        return STAFF_ROLE_ID in [role.id for role in ctx.author.roles]
-    return commands.check(predicate)
-
-@bot.command(name="admin")
-@is_staff()
-async def admin_panel(ctx):
-    embed = discord.Embed(title=f"{EMOJI_COG} Staff Administration Panel", description="Select an action.", color=discord.Color.blue())
-    await ctx.send(embed=embed, view=AdminPanel(), ephemeral=True)
-
-async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: str):
-    if cid == "admin_set_address":
-        await interaction.response.send_modal(AddressModal())
-    elif cid == "admin_set_qr":
-        await interaction.response.send_modal(QRModal())
-    elif cid == "admin_fake_order":
-        await interaction.response.defer(ephemeral=True)
-        await trigger_fake_order_now()
-        await interaction.followup.send(f"{EMOJI_VERIFIED} Fake order triggered.", ephemeral=True)
-    elif cid == "admin_set_discount":
-        await interaction.response.send_modal(DiscountModal())
-    elif cid == "admin_set_prices":
-        await interaction.response.defer(ephemeral=True)
-        await send_price_embed(force_new=True)
-        await interaction.followup.send(f"{EMOJI_VERIFIED} Price list updated.", ephemeral=True)
-    elif cid == "admin_reset_embed":
-        await interaction.response.defer(ephemeral=True)
-        await send_info_embed(force_new=True)
-        await interaction.followup.send(f"{EMOJI_VERIFIED} Info embed reset.", ephemeral=True)
-    elif cid == "admin_set_payments":
-        await interaction.response.defer(ephemeral=True)
-        await send_payment_methods_embed(force_new=True)
-        await interaction.followup.send(f"{EMOJI_VERIFIED} Payments embed updated.", ephemeral=True)
-    elif cid == "admin_set_tos":
-        await interaction.response.defer(ephemeral=True)
-        await send_tos_embed(force_new=True)
-        await interaction.followup.send(f"{EMOJI_VERIFIED} ToS embed updated.", ephemeral=True)
-
 class AdminPanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
@@ -552,9 +546,15 @@ class AdminPanel(discord.ui.View):
     async def set_qr_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_set_qr")
 
-    @discord.ui.button(label="Set Discount Code", style=discord.ButtonStyle.blurple, custom_id="admin_set_discount", emoji="label")
-    async def set_discount_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await handle_admin_panel_interaction(interaction, "admin_set_discount")
+    @discord.ui.button(label="Add Discount Code", style=discord.ButtonStyle.green, custom_id="admin_add_discount_msg", emoji="label")
+    async def add_discount_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(title="How to Add Discount Code", color=0x00FF00)
+        embed.description = (
+            "Type in **any channel** (with Staff role):\n\n"
+            "```WINTERDEAL, 100000, 60.00```\n\n"
+            "**Format:** `CODE, ROBUX_AMOUNT, PRICE_USD`"
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label="Trigger Fake Order", style=discord.ButtonStyle.green, custom_id="admin_fake_order", emoji="robot")
     async def fake_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -576,6 +576,13 @@ class AdminPanel(discord.ui.View):
     async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_reset_embed")
 
+    @discord.ui.button(label="Settings", style=discord.ButtonStyle.gray, custom_id="admin_settings", emoji=EMOJI_COG)
+    async def settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(title="Bot Settings", color=0x2F3136)
+        embed.add_field(name="Rate", value=f"${ROBUX_RATE_PER_1000:.2f}/1K", inline=True)
+        embed.add_field(name="Max Robux", value="800,000", inline=True)
+        embed.add_field(name="Min Robux", value="10,000", inline=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 # -------------------------------------------------
 # COMPLETION LOGIC
 # -------------------------------------------------
