@@ -7,6 +7,12 @@ from datetime import datetime, timedelta
 import requests
 import discord
 from discord.ext import commands, tasks
+#bot setupp
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    # 4 spaces required here for the lines inside the 'if' block
+    BOT_TOKEN = "YOUR_DISCORD_BOT_TOKEN_HERE" # This line should be removed as it sets a placeholder
+    raise SystemExit("ERROR: BOT_TOKEN not set in Northflank! Add it under Environment Variables.")
 
 # --- Rewarble Links (Defined at the top for global access) ---
 # --- Rewarble Links ---
