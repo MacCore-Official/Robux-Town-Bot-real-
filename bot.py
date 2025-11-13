@@ -480,17 +480,19 @@ async def on_ready():
         automated_fake_completion_loop.start()
 
 # -------------------------------------------------
-# RUN BOT – NORTHFLANK (uses bot_token) – PROVEN WORKING
+# RUN BOT – NORTHFLANK (uses BOT_TOKEN – UPPERCASE!)
 # -------------------------------------------------
 import os
 
-# This is what your OLD code used — let's keep it simple
-token = os.getenv("bot_token")
+# LOOK FOR BOT_TOKEN (UPPERCASE) – THIS IS WHAT YOU SET
+token = os.getenv("BOT_TOKEN")
 
 if not token:
-    print("ERROR: bot_token not found in environment variables!")
-    print("Check Northflank → Environment Variables → bot_token")
-    exit(1)  # Stop the bot gracefully
+    print("FATAL ERROR: BOT_TOKEN not found!")
+    print("Go to Northflank → Environment Variables")
+    print("Make sure you have: BOT_TOKEN = your_token_here")
+    print("No quotes, no spaces around =, and name is BOT_TOKEN (uppercase)")
+    exit(1)
 
-print(f"Token loaded successfully (starts with: {token[:15]}...)")
+print(f"Token loaded: {token[:20]}...")  # Debug
 bot.run(token)
