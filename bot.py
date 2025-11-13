@@ -541,6 +541,12 @@ async def setup(ctx):
     await channel.send(embed=embed, view=BuyView())
 
 # -------------------------------------------------
-# RUN BOT
+# RUN BOT (Northflank Ready)
 # -------------------------------------------------
-bot.run("YOUR_BOT_TOKEN_HERE")
+import os
+
+token = os.getenv("DISCORD_TOKEN")
+if not token:
+    raise ValueError("DISCORD_TOKEN is missing! Check Northflank environment variables.")
+
+bot.run(token)
