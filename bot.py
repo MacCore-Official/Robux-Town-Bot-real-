@@ -85,7 +85,6 @@ default_config = {
     }
 }
 
-def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r") as f:
@@ -93,7 +92,8 @@ def load_config():
             config = default_config.copy()
             config.update(loaded)
             return config
-        except:
+        except Exception as e:
+            print(f"Config load error: {e}")
             pass
     return default_config.copy()
 
