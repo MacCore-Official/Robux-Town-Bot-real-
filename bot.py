@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + GIVEAWAY IMPLEMENTATION)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + ALL EMOJIS)
 import os
 import asyncio
 import json
@@ -15,11 +15,11 @@ from discord.ext import commands, tasks
 ENEBA_REWARBLE_LINK = "https://www.eneba.com/rewarble-rewarble-visa-10-usd-voucher-global"
 G2A_REWARBLE_LINK = "https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewarble-key-global-i10000502992001?suid=960beb55-4797-46d5-b14c-94995fd68f31"
 
-# --- Giveaway Branding Assets (Needed for the new feature) ---
-EMOJI_GIVEAWAY      = "🎁" 
-EMOJI_CROWN         = "👑" 
-GIVEAWAY_DURATION_MIN = 60 
-# Note: EMOJI_ROBUX and other constants are defined later in the script (which caused the NameErrors)
+# --- Giveaway Branding Assets (Ensure these are here for global access) ---
+EMOJI_GIVEAWAY_REACT = "<:giveawaygift:1437688517089165442>"
+EMOJI_CROWN_WINNER   = "👑" 
+GIVEAWAY_THUMBNAIL   = "https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png" 
+EMOJI_GIVEAWAY_BANNER = "https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png"
 # --------------------------------------------------------
 
 
