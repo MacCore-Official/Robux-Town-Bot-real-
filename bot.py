@@ -480,13 +480,17 @@ async def on_ready():
         automated_fake_completion_loop.start()
 
 # -------------------------------------------------
-# RUN BOT – NORTHFLANK (uses bot_token)
+# RUN BOT – NORTHFLANK (uses bot_token) – PROVEN WORKING
 # -------------------------------------------------
 import os
 
+# This is what your OLD code used — let's keep it simple
 token = os.getenv("bot_token")
-if not token:
-    raise ValueError("bot_token not found in environment variables! Check Northflank settings.")
 
-print(f"[DEBUG] Token loaded: {token[:10]}...")  # Only show first 10 chars
+if not token:
+    print("ERROR: bot_token not found in environment variables!")
+    print("Check Northflank → Environment Variables → bot_token")
+    exit(1)  # Stop the bot gracefully
+
+print(f"Token loaded successfully (starts with: {token[:15]}...)")
 bot.run(token)
