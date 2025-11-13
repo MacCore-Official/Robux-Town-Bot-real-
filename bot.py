@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + ALL EMOJIS)
+# Robux Town™ – FINAL FEATURE COMPLETE VERSION (LAST STABLE LOGIC)
 import os
 import asyncio
 import json
@@ -35,7 +35,7 @@ intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="+", intents=intents, help_command=None)
-active_flows = {} # CRITICAL: Defined here as a global variable
+active_flows = {} 
 
 
 # Channels (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
@@ -798,7 +798,7 @@ async def set_deal_command(ctx, code: str, amount: str, price: float):
     try:
         amount_int = int(amount_str)
     except ValueError:
-        await ctx.send(f"{EMOJI_WARNING} Invalid amount format. Use numbers only (e.g., 20000 or 20K).", ephemeral=True)
+        await ctx.send(f"{EMOJI_WARNING} Invalid amount format. Use numbers only (e.g., 20000 or 2K).", ephemeral=True)
         return
 
     if amount_int < 10000:
@@ -922,6 +922,15 @@ class AdminPanel(discord.ui.View):
 # -------------------------------------------------
 # FINAL EXECUTABLE BLOCK (CRITICAL FOR STARTUP)
 # -------------------------------------------------
+
+@tasks.loop(hours=random.uniform(5, 10))
+async def automated_fake_completion_loop():
+    amount = random.choice([10000, 25000, 50000, 100000, 250000])
+    price = get_price(amount)
+    method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
+    
+    await send_completed_order(amount, price, method)
+
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
@@ -939,14 +948,6 @@ async def on_ready():
     
     if not automated_fake_completion_loop.is_running():
         automated_fake_completion_loop.start()
-
-@tasks.loop(hours=random.uniform(5, 10))
-async def automated_fake_completion_loop():
-    amount = random.choice([10000, 25000, 50000, 100000, 250000])
-    price = get_price(amount)
-    method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
-    
-    await send_completed_order(amount, price, method)
 
 if __name__ == "__main__":
     if BOT_TOKEN == "YOUR_DISCORD_BOT_TOKEN_HERE":
