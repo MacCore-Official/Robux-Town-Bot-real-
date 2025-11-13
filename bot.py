@@ -482,7 +482,11 @@ async def on_ready():
 # -------------------------------------------------
 # RUN BOT – NORTHFLANK (uses bot_token)
 # -------------------------------------------------
+import os
+
 token = os.getenv("bot_token")
 if not token:
-    raise ValueError("bot_token not found in environment variables! Set it in Northflank.")
+    raise ValueError("bot_token not found in environment variables! Check Northflank settings.")
+
+print(f"[DEBUG] Token loaded: {token[:10]}...")  # Only show first 10 chars
 bot.run(token)
