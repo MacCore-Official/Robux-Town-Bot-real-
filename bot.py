@@ -88,20 +88,14 @@ default_config = {
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
-with open(CONFIG_FILE, "r") as f:
-    loaded = json.load(f)
+            with open(CONFIG_FILE, "r") as f:
+                loaded = json.load(f)
             config = default_config.copy()
             config.update(loaded)
             return config
         except:
             pass
     return default_config.copy()
-
-def save_config(data):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-config = load_config()
 
 # -------------------------------------------------
 # CRYPTO PRICE
