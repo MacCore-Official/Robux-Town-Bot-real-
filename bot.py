@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES)
 import os
 import asyncio
 import json
@@ -21,11 +21,11 @@ GIVEAWAY_THUMBNAIL = "https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa09
 GIVEAWAY_BANNER = "https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png"
 
 # -------------------------------------------------
-# TOKEN FROM NORTHFLANK (NO HARDCODED TOKEN!)
+# TOKEN FROM NORTHFLANK
 # -------------------------------------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise SystemExit("ERROR: BOT_TOKEN not found in Northflank Environment Variables!")
+    raise SystemExit("ERROR: BOT_TOKEN not set in Northflank Environment Variables!")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -54,6 +54,7 @@ EMOJI_CRYPTO = "<:Crypto:1437309415551406222>"
 EMOJI_CARD = "<:Card:1435526554783318047>"
 EMOJI_PAYPAL = "<:PayPal:1435526543513354354>"
 EMOJI_PAYMENT_SUPPORT = "<:PAYMENT_SUPPORT:1435526984011874434>"
+EMOJI_LOADING = "<a:Loading:1435526855523434576>"
 
 # -------------------------------------------------
 # PRICING
@@ -87,7 +88,7 @@ default_config = {
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, "r") as f:
+            with open open(CONFIG_FILE, "r") as f:
                 loaded = json.load(f)
             config = default_config.copy()
             config.update(loaded)
@@ -101,6 +102,18 @@ def save_config(data):
         json.dump(data, f, indent=2)
 
 config = load_config()
+
+# -------------------------------------------------
+# CRYPTO PRICE
+# -------------------------------------------------
+CRYPTO_IDS = {"btc": "bitcoin", "ltc": "litecoin", "eth": "ethereum", "sol": "solana"}
+async def get_crypto_price(crypto: str) -> float:
+    try:
+        r = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={CRYPTO_IDS[crypto]}&vs_currencies=usd", timeout=5)
+        r.raise_for_status()
+        return r.json()[CRYPTO_IDS[crypto]]["usd"]
+    except:
+        return 60000.0 if crypto == "btc" else 80.0 if crypto == "ltc" else 3000.0 if crypto == "eth" else 100.0
 
 # -------------------------------------------------
 # PURCHASE FLOW
@@ -214,17 +227,6 @@ class PurchaseFlow:
         await i.followup.send(embed=embed, view=view)
 
 # -------------------------------------------------
-# CRYPTO PRICE
-# -------------------------------------------------
-async def get_crypto_price(crypto: str) -> float:
-    try:
-        r = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={crypto}&vs_currencies=usd", timeout=5)
-        r.raise_for_status()
-        return r.json()[crypto]["usd"]
-    except:
-        return 60000.0 if crypto == "bitcoin" else 80.0 if crypto == "litecoin" else 3000.0 if crypto == "ethereum" else 100.0
-
-# -------------------------------------------------
 # INTERACTIONS
 # -------------------------------------------------
 @bot.event
@@ -237,13 +239,24 @@ async def on_interaction(interaction):
     if cid == "flow_yes_1" and flow:
         await interaction.response.defer()
         await flow.send_step(2)
-    elif cid in ["flow_no_1", "flow_no_4"] and flow:
+    elif cid == "flow_no_1" and flow:
         await interaction.response.defer()
         await flow.thread.edit(archived=True, locked=True)
         active_flows.pop(interaction.user.id, None)
     elif cid == "flow_yes_4" and flow:
         await interaction.response.defer()
         await flow.send_step(5)
+    elif cid == "flow_no_4" and flow:
+        await interaction.response.defer()
+        await flow.thread.edit(archived=True, locked=True)
+        active_flows.pop(interaction.user.id, None)
+        # Restart flow
+        info = bot.get_channel(INFO_CHANNEL_ID)
+        thread = await info.create_thread(name=f"buy-{interaction.user.name}-{random.randint(1000,9999)}", type=discord.ChannelType.private_thread)
+        await thread.add_user(interaction.user)
+        new_flow = PurchaseFlow(interaction.user.id, thread)
+        active_flows[interaction.user.id] = new_flow
+        await new_flow.send_step(1)
     elif cid == "submit_tx" and flow:
         modal = PaymentModal("Crypto", flow.robux, flow.price, flow.crypto, flow.discount_code)
         await interaction.response.send_modal(modal)
@@ -256,7 +269,7 @@ async def on_interaction(interaction):
 # -------------------------------------------------
 @bot.event
 async def on_message(message):
-    if message.author.bot or not message.channel.name.startswith("Purchase-"):
+    if message.author.bot or not message.channel.name.startswith("buy-"):
         return await bot.process_commands(message)
 
     flow = active_flows.get(message.author.id)
@@ -266,25 +279,29 @@ async def on_message(message):
     if flow.robux == 0 and re.fullmatch(r"[\d,]+", message.content.strip()):
         try:
             amount = int(message.content.replace(",", ""))
-            if amount < 10000 or amount > 800000:
-                await message.reply(f"{EMOJI_WARNING} 10K–800K only.", delete_after=5)
+            if amount < 10000:
+                await message.reply(f"{EMOJI_WARNING} Minimum 10,000 {EMOJI_ROBUX}", delete_after=5)
+                return
+            if amount > 800000:
+                await message.reply(f"{EMOJI_WARNING} Maximum 800,000 {EMOJI_ROBUX}", delete_after=5)
                 return
             flow.robux = amount
             await message.delete()
             await flow.send_step(3)
-        except: pass
+        except:
+            pass
     elif flow.robux > 0 and flow.price == 0.0:
         code = message.content.strip()
         await message.delete()
         flow.price = get_price(flow.robux)
-        if code.upper() != "SKIP":
+        if code.upper() != "SKIP" and code.upper() != "":
             deal = config["deals"].get(code.upper())
             if deal and flow.robux >= deal.get("min_robux_required", 0):
                 flow.price = deal["price"]
                 flow.discount_code = code.upper()
-                await flow.thread.send(f"{EMOJI_VERIFIED} Coupon **{code.upper()}** applied!")
+                await flow.thread.send(f"{EMOJI_VERIFIED} Coupon **{code.upper()}**\nNew price: **${flow.price:.2f}**")
             else:
-                await flow.thread.send(f"{EMOJI_WARNING} Invalid coupon.")
+                await flow.thread.send(f"{EMOJI_WARNING} Invalid coupon. Using standard price.")
         await flow.send_step(4)
     await bot.process_commands(message)
 
@@ -293,43 +310,72 @@ async def on_message(message):
 # -------------------------------------------------
 class PaymentModal(discord.ui.Modal):
     def __init__(self, method, amount, price, crypto=None, discount_code=None):
-        super().__init__(title="Submit Details", timeout=None)
-        self.method = method; self.amount = amount; self.price = price; self.crypto = crypto; self.discount_code = discount_code
-        self.details = discord.ui.TextInput(label="TX / Code", style=discord.TextStyle.paragraph)
+        super().__init__(title="Submit Payment Details", timeout=None)
+        self.method = method
+        self.amount = amount
+        self.price = price
+        self.crypto = crypto
+        self.discount_code = discount_code
+        self.details = discord.ui.TextInput(label="TX Hash / Gift Code", style=discord.TextStyle.paragraph)
         self.add_item(self.details)
 
     async def on_submit(self, i):
+        method_name = self.crypto.upper() if self.crypto else self.method.capitalize()
         data = {
             "User": i.user.mention,
             "Robux": f"{self.amount:,}",
             "USD": f"${self.price:.2f}",
-            "Method": self.crypto.upper() if self.crypto else self.method.capitalize(),
+            "Method": method_name,
             "Details": self.details.value,
-            "Discount": self.discount_code or "None"
+            "Discount": self.discount_code or "None",
+            "Thread": i.channel.mention
         }
-        await i.response.send_message(f"{EMOJI_VERIFIED} Submitted!", ephemeral=True)
-        channel = bot.get_channel(LOG_CHANNEL_ID)
-        if channel:
-            embed = discord.Embed(title="New Payment", color=0x00A3FF)
+        await i.response.send_message(f"{EMOJI_VERIFIED} Payment submitted!", ephemeral=True)
+
+        # Send to log
+        log_channel = bot.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            embed = discord.Embed(title="New Payment Submission", color=0x00A3FF)
             for k, v in data.items():
                 embed.add_field(name=k, value=v, inline=False)
-            await channel.send(embed=embed)
+            await log_channel.send(embed=embed)
+
+        # DM staff
+        for user_id in STAFF_DM_IDS:
+            try:
+                user = await bot.fetch_user(user_id)
+                await user.send(embed=embed)
+            except:
+                pass
 
 # -------------------------------------------------
-# PERSISTENT BUY BUTTON
+# PERSISTENT BUY BUTTON (FIXED)
 # -------------------------------------------------
 class BuyView(discord.ui.View):
-    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.blurple, custom_id="buy_robux")
-    async def buy(self, i, b):
-        if i.user.id in active_flows:
-            await i.response.send_message(f"{EMOJI_WARNING} One at a time!", ephemeral=True)
+    def __init__(self):
+        super().__init__(timeout=None)  # REQUIRED FOR PERSISTENT
+
+    @discord.ui.button(label="Purchase Robux", style=discord.ButtonStyle.blurple, custom_id="persistent_buy_robux")
+    async def buy(self, interaction, button):
+        if interaction.user.id in active_flows:
+            await interaction.response.send_message(f"{EMOJI_WARNING} You already have an active purchase!", ephemeral=True)
             return
-        info = bot.get_channel(INFO_CHANNEL_ID)
-        thread = await info.create_thread(name=f"buy-{i.user.name}-{random.randint(1000,9999)}", type=discord.ChannelType.private_thread)
-        await thread.add_user(i.user)
-        flow = PurchaseFlow(i.user.id, thread)
-        active_flows[i.user.id] = flow
-        await i.response.send_message(f"Started! → {thread.mention}", ephemeral=True)
+
+        info_channel = bot.get_channel(INFO_CHANNEL_ID)
+        if not info_channel:
+            await interaction.response.send_message("Error: Info channel not found.", ephemeral=True)
+            return
+
+        thread = await info_channel.create_thread(
+            name=f"buy-{interaction.user.name}-{random.randint(1000,9999)}",
+            type=discord.ChannelType.private_thread
+        )
+        await thread.add_user(interaction.user)
+
+        flow = PurchaseFlow(interaction.user.id, thread)
+        active_flows[interaction.user.id] = flow
+
+        await interaction.response.send_message(f"{EMOJI_VERIFIED} Purchase started! Check {thread.mention}", ephemeral=True)
         await flow.send_step(1)
 
 # -------------------------------------------------
@@ -338,23 +384,33 @@ class BuyView(discord.ui.View):
 @bot.command()
 async def setup(ctx):
     channel = bot.get_channel(INFO_CHANNEL_ID)
-    embed = discord.Embed(title="Robux Town™", description="Click below to buy!", color=0x00A3FF)
+    if not channel:
+        await ctx.send("Error: Info channel not found.")
+        return
+    embed = discord.Embed(title="Robux Town™", description="Click below to buy Robux!", color=0x00A3FF)
     await channel.send(embed=embed, view=BuyView())
+    await ctx.send("Setup complete! Button deployed.")
 
 # -------------------------------------------------
 # FAKE ORDERS
 # -------------------------------------------------
 async def send_fake_order():
     channel = bot.get_channel(COMPLETED_CHANNEL_ID)
-    if not channel: return
-    amount = random.choice([10000, 25000, 50000, 100000])
-    embed = discord.Embed(title="New Order Completed", color=0x38B750)
-    embed.add_field(name="Robux", value=f"**{amount:,}**", inline=True)
-    embed.add_field(name="USD", value=f"**${get_price(amount):.2f}**", inline=True)
+    if not channel:
+        return
+    amounts = [10000, 25000, 50000, 100000, 250000]
+    amount = random.choice(amounts)
+    price = get_price(amount)
+    method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
+    embed = discord.Embed(title="New Completed Order", color=0x38B750)
+    embed.add_field(name="User", value="**Hidden**", inline=True)
+    embed.add_field(name="Method", value=f"**{method}**", inline=True)
+    embed.add_field(name="Robux", value=f"**{amount:,} {EMOJI_ROBUX}**", inline=False)
+    embed.add_field(name="USD", value=f"**${price:.2f}**", inline=True)
     await channel.send(embed=embed)
 
 @tasks.loop(hours=random.uniform(4, 8))
-async def fake_loop():
+async def fake_order_loop():
     await send_fake_order()
 
 # -------------------------------------------------
@@ -362,10 +418,10 @@ async def fake_loop():
 # -------------------------------------------------
 @bot.event
 async def on_ready():
-    print(f"Bot ready: {bot.user}")
-    bot.add_view(BuyView())
-    if not fake_loop.is_running():
-        fake_loop.start()
+    print(f"Logged in as {bot.user}")
+    bot.add_view(BuyView())  # Persistent view
+    if not fake_order_loop.is_running():
+        fake_order_loop.start()
 
 # -------------------------------------------------
 # RUN
