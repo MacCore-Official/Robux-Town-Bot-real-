@@ -88,8 +88,8 @@ default_config = {
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
-            with open open(CONFIG_FILE, "r") as f:
-                loaded = json.load(f)
+with open(CONFIG_FILE, "r") as f:
+    loaded = json.load(f)
             config = default_config.copy()
             config.update(loaded)
             return config
