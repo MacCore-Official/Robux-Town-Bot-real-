@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + ALL EMOJIS)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + STRUCTURAL FIX)
 import os
 import asyncio
 import json
@@ -917,44 +917,3 @@ class AdminPanel(discord.ui.View):
     @discord.ui.button(label="Reset Info Embed", style=discord.ButtonStyle.red, custom_id="admin_reset_embed", emoji="🔄")
     async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_reset_embed")
-
-# -------------------------------------------------
-# FINAL EXECUTABLE BLOCK (CRITICAL FOR STARTUP)
-# -------------------------------------------------
-@tasks.loop(hours=random.uniform(5, 10))
-async def automated_fake_completion_loop():
-    amount = random.choice([10000, 25000, 50000, 100000, 250000])
-    price = get_price(amount)
-    method = random.choice(["Crypto", "Card", "PayPal", "Giftcard"])
-    
-    await send_completed_order(amount, price, method)
-
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
-    
-    try:
-        persistent_view = PersistentPurchaseButton()
-        bot.add_view(persistent_view)
-    except Exception as e:
-        print(f"Error adding persistent view: {e}")
-    
-    await send_info_embed()
-    await send_price_embed() 
-    await send_payment_methods_embed() 
-    await send_tos_embed()             
-    
-    if not automated_fake_completion_loop.is_running():
-        automated_fake_completion_loop.start()
-
-if __name__ == "__main__":
-    if BOT_TOKEN == "YOUR_DISCORD_BOT_TOKEN_HERE":
-        print("--- WARNING ---")
-        print("Please replace 'YOUR_DISCORD_BOT_TOKEN_HERE' with your actual bot token.")
-        print("The bot will not start correctly without a valid token.")
-    try:
-        bot.run(BOT_TOKEN)
-    except discord.LoginFailure:
-        print("Error: The provided BOT_TOKEN is invalid. Please check your token.")
-    except Exception as e:
-        print(f"An unexpected error occurred during bot startup: {e}")
