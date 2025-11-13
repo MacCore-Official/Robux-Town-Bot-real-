@@ -131,18 +131,13 @@ CONFIG_FILE = "config.json"
 default_config = {
 "wallets": {
 @@ -80,344 +107,910 @@ def get_price(robux_amount: int) -> float:
-"eth": "https://i.ibb.co/67YFkD4h/Screenshot-2025-11-10-at-6-29-33-PM.png",
-"sol": "https://i.ibb.co/XfDB2z1b/Screenshot-2025-11-10-at-6-30-02-PM.png"
-},
-    "deals": {
-        "WINTERDEAL": {"robux": 100000, "price": 60.00, "min_robux_required": 100000}
-    "deals": { # <-- ADDED DEFAULT DEAL FOR TESTING
-        "WINTERDEAL": {
-            "robux": 100000, 
-            "price": 60.00, 
-            "min_robux_required": 100000
-        } 
-}
+...
+"deals": { # <-- ADDED DEFAULT DEAL FOR TESTING
+    "WINTERDEAL": {
+        "robux": 100000,
+        "price": 60.00,
+        "min_robux_required": 100000
+    }
 }
 
 def load_config():
