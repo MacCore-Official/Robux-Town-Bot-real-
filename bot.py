@@ -377,11 +377,11 @@ class BuyView(discord.ui.View):
         await flow.send_step(1)
 
 # -------------------------------------------------
-# ADMIN PANEL
+# ADMIN PANEL (PERSISTENT)
 # -------------------------------------------------
 class AdminPanel(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=300)
+        super().__init__(timeout=None)  # REQUIRED
 
     @discord.ui.button(label="Set Crypto Address", style=discord.ButtonStyle.blurple, custom_id="admin_set_address", emoji=EMOJI_CRYPTO)
     async def set_address_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -395,7 +395,7 @@ class AdminPanel(discord.ui.View):
     async def add_discount_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="How to Add Discount Code", color=0x00FF00)
         embed.description = (
-            "Type in **any channel** ( with Staff role):\n\n"
+            "Type in **any channel** (with Staff role):\n\n"
             "```WINTERDEAL, 100000, 60.00```\n\n"
             "**Format:** `CODE, ROBUX_AMOUNT, PRICE_USD`"
         )
@@ -405,7 +405,6 @@ class AdminPanel(discord.ui.View):
     async def fake_order_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await trigger_fake_order_now()
         await interaction.response.send_message(f"{EMOJI_VERIFIED} Fake order sent!", ephemeral=True)
-
 # -------------------------------------------------
 # MODALS (Address, QR)
 # -------------------------------------------------
@@ -451,14 +450,11 @@ async def trigger_fake_order_now():
 async def fake_loop():
     await trigger_fake_order_now()
 
-# -------------------------------------------------
-# ON READY
-# -------------------------------------------------
 @bot.event
 async def on_ready():
     print(f"Bot ready: {bot.user}")
-    bot.add_view(BuyView())
-    bot.add_view(AdminPanel())
+    bot.add_view(BuyView())          # Persistent
+    bot.add_view(AdminPanel())       # Now persistent
     if not fake_loop.is_running():
         fake_loop.start()
 
