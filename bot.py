@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL FEATURE COMPLETE VERSION (LAST STABLE LOGIC)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + GIVEAWAY IMPLEMENTATION)
 import os
 import asyncio
 import json
@@ -15,11 +15,11 @@ from discord.ext import commands, tasks
 ENEBA_REWARBLE_LINK = "https://www.eneba.com/rewarble-rewarble-visa-10-usd-voucher-global"
 G2A_REWARBLE_LINK = "https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewarble-key-global-i10000502992001?suid=960beb55-4797-46d5-b14c-94995fd68f31"
 
-# --- Giveaway Branding Assets (Ensure these are here for global access) ---
-EMOJI_GIVEAWAY_REACT = "<:giveawaygift:1437688517089165442>"
-EMOJI_CROWN_WINNER   = "👑" 
-GIVEAWAY_THUMBNAIL   = "https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png" 
-EMOJI_GIVEAWAY_BANNER = "https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png"
+# --- Giveaway Branding Assets (Needed for the new feature) ---
+EMOJI_GIVEAWAY      = "🎁" 
+EMOJI_CROWN         = "👑" 
+GIVEAWAY_DURATION_MIN = 60 
+# Note: EMOJI_ROBUX and other constants are defined later in the script (which caused the NameErrors)
 # --------------------------------------------------------
 
 
@@ -35,7 +35,7 @@ intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="+", intents=intents, help_command=None)
-active_flows = {} 
+active_flows = {} # CRITICAL: Defined here as a global variable
 
 
 # Channels (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
@@ -918,11 +918,9 @@ class AdminPanel(discord.ui.View):
     async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_reset_embed")
 
-
 # -------------------------------------------------
 # FINAL EXECUTABLE BLOCK (CRITICAL FOR STARTUP)
 # -------------------------------------------------
-
 @tasks.loop(hours=random.uniform(5, 10))
 async def automated_fake_completion_loop():
     amount = random.choice([10000, 25000, 50000, 100000, 250000])
