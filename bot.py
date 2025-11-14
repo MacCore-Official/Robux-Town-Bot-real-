@@ -359,6 +359,8 @@ class PurchaseFlow(discord.ui.View):
 
     async def send_step(self, step: int):
         color = 0x00A3FF
+        current_view = discord.ui.View(timeout=None) # Start with an empty view for new messages
+
         if step == 1:
             # --- MODIFIED: Send and Pin Disclaimer FIRST ---
             try:
@@ -372,10 +374,9 @@ class PurchaseFlow(discord.ui.View):
             # --- THEN Send the Start Embed ---
             embed = discord.Embed(title="Would you like to start buying robux? (1/6)", color=color)
             embed.description = "\n\nPlease click \"Yes\" if you would like to start purchasing your Robux."
-            view = discord.ui.View(timeout=None)
-            view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_1"))
-            view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_1"))
-            await self.thread.send(embed=embed, view=view)
+            current_view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_1"))
+            current_view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_1"))
+            await self.thread.send(embed=embed, view=current_view)
             
         elif step == 2:
             embed = discord.Embed(title="How much robux would you like to buy? (2/6)", color=color)
@@ -397,10 +398,9 @@ class PurchaseFlow(discord.ui.View):
                 f"Standard Rate: **${rate_per_1k:.2f} per 1,000 {EMOJI_ROBUX}**\n\n"
                 f"Total Price in USD: **${self.price:.2f}**"
             )
-            view = discord.ui.View(timeout=None)
-            view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_4"))
-            view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_4"))
-            await self.thread.send(embed=embed, view=view)
+            current_view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_4"))
+            current_view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_4"))
+            await self.thread.send(embed=embed, view=current_view)
             
         elif step == 5:
             embed = discord.Embed(title="Please select your preferred payment method (5/6)", color=color)
@@ -416,14 +416,22 @@ class PurchaseFlow(discord.ui.View):
                 ]
             )
             async def payment_callback_wrapper(interaction: discord.Interaction):
-                # --- MODIFIED: Disable select menu after choice ---
-                await interaction.response.edit_message(view=None)
+                # --- MODIFIED: Disable select menu but keep it visible ---
+                view_to_disable = discord.ui.View()
+                # Re-create the select menu but disabled
+                disabled_select = discord.ui.Select(
+                    placeholder=interaction.data["values"][0].capitalize(), 
+                    custom_id="payment_select_disabled",
+                    disabled=True,
+                    options=[discord.SelectOption(label=interaction.data["values"][0].capitalize(), value=interaction.data["values"][0])]
+                )
+                view_to_disable.add_item(disabled_select)
+                await interaction.response.edit_message(view=view_to_disable)
                 await self.payment_callback(interaction)
                 
             select.callback = payment_callback_wrapper
-            view = discord.ui.View(timeout=None)
-            view.add_item(select)
-            await self.thread.send(embed=embed, view=view)
+            current_view.add_item(select)
+            await self.thread.send(embed=embed, view=current_view)
 
     async def payment_callback(self, interaction: discord.Interaction):
         self.method = interaction.data["values"][0]
@@ -443,14 +451,22 @@ class PurchaseFlow(discord.ui.View):
                 ]
             )
             async def crypto_callback_wrapper(interaction: discord.Interaction):
-                # --- MODIFIED: Disable select menu after choice ---
-                await interaction.response.edit_message(view=None)
+                # --- MODIFIED: Disable select menu but keep it visible ---
+                view_to_disable = discord.ui.View()
+                disabled_select = discord.ui.Select(
+                    placeholder=interaction.data["values"][0].upper(), 
+                    custom_id="crypto_select_disabled",
+                    disabled=True,
+                    options=[discord.SelectOption(label=interaction.data["values"][0].upper(), value=interaction.data["values"][0])]
+                )
+                view_to_disable.add_item(disabled_select)
+                await interaction.response.edit_message(view=view_to_disable)
                 await self.crypto_callback(interaction)
                 
             select.callback = crypto_callback_wrapper
-            view = discord.ui.View(timeout=None)
-            view.add_item(select)
-            await interaction.followup.send(embed=embed, view=view)
+            current_view = discord.ui.View(timeout=None)
+            current_view.add_item(select)
+            await interaction.followup.send(embed=embed, view=current_view)
         else:
             await self.send_payment_invoice(interaction)
 
@@ -560,19 +576,26 @@ async def on_interaction(interaction: discord.Interaction):
     # === Purchase Flow Buttons ===
     elif cid.startswith("flow_") and flow:
         # --- MODIFIED: Edit message to disable buttons on click ---
+        
+        # Create a new view to hold the disabled buttons
+        disabled_view = discord.ui.View(timeout=None)
+        for item in interaction.message.components[0].children:
+            item.disabled = True
+            disabled_view.add_item(item)
+            
         if cid == "flow_yes_1":
-            await interaction.response.edit_message(view=None)
+            await interaction.response.edit_message(view=disabled_view)
             await flow.send_step(2)
         elif cid == "flow_no_1":
-            await interaction.response.edit_message(view=None)
+            await interaction.response.edit_message(view=disabled_view)
             await flow.thread.send("Purchase flow cancelled.")
             await flow.thread.edit(archived=True, locked=True)
             active_flows.pop(user_id, None)
         elif cid == "flow_yes_4":
-            await interaction.response.edit_message(view=None)
+            await interaction.response.edit_message(view=disabled_view)
             await flow.send_step(5)
         elif cid == "flow_no_4":
-            await interaction.response.edit_message(view=None)
+            await interaction.response.edit_message(view=disabled_view)
             await flow.thread.send("Cancelled. Restarting...")
             await flow.thread.edit(archived=True, locked=True)
             active_flows.pop(user_id, None)
