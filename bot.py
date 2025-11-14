@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + CORRECT INTERACTION LOGIC)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + AESTHETICS + INTERACTION FIX)
 import os
 import asyncio
 import json
@@ -343,12 +343,14 @@ async def apply_discount(flow, code):
     else:
         await flow.thread.send(f"{EMOJI_WARNING} Coupon code `{code}` is invalid. Using standard pricing.", delete_after=10)
 
+
 # -------------------------------------------------
-# PURCHASE FLOW CLASS (REWRITTEN)
+# --- ALL-IN-ONE PURCHASE FLOW (CLASSES) ---
 # -------------------------------------------------
-class PurchaseFlow(discord.ui.View):
+
+class PurchaseFlow:
+    """Manages the state and progression of a single purchase flow."""
     def __init__(self, user_id, thread):
-        super().__init__(timeout=300) # 5 minute timeout for the view
         self.user_id = user_id
         self.thread = thread
         self.robux = 0
@@ -466,11 +468,14 @@ class Button(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         # --- FIXED: Defer first, then edit ---
+        # 1. Acknowledge the interaction immediately
         await interaction.response.defer()
         
+        # 2. Get the view from the original message and disable its components
         view = self.view
         for item in view.children:
             item.disabled = True
+        # 3. Edit the original message with the disabled view
         await interaction.edit_original_response(view=view)
 
         # --- Button Logic ---
@@ -519,19 +524,28 @@ class PaymentSelect(discord.ui.Select):
         super().__init__(placeholder="Select your payment method", options=options, custom_id="payment_select")
 
     async def callback(self, interaction: discord.Interaction):
+        # 1. Set the flow's method
         self.flow.method = self.values[0]
         
-        # --- FIXED: Disable select menu but keep it visible ---
+        # 2. Defer and disable the view
         await interaction.response.defer() # Defer first
         view = self.view
         for item in view.children:
-            item.disabled = True
-        self.placeholder = self.values[0].capitalize()
+            if isinstance(item, discord.ui.Select):
+                item.disabled = True
+                item.placeholder = self.values[0].capitalize()
         await interaction.edit_original_response(view=view)
 
-        if self.values[0] == "crypto":
-            await self.flow.payment_callback(interaction) # Call the next step
+        # 3. Check the method and proceed
+        if self.flow.method == "crypto":
+            # Send the *new* crypto selection menu
+            embed = discord.Embed(title="Select Cryptocurrency", color=0x00A3FF)
+            embed.description = "\n\nWhich coin will you be sending?"
+            crypto_view = discord.ui.View(timeout=None)
+            crypto_view.add_item(CryptoSelect(flow=self.flow)) # Add the *next* step's view
+            await interaction.followup.send(embed=embed, view=crypto_view)
         else:
+            # It's Card, PayPal, or Giftcard, so send the invoice
             await self.flow.send_payment_invoice(interaction)
 
 class CryptoSelect(discord.ui.Select):
@@ -546,17 +560,20 @@ class CryptoSelect(discord.ui.Select):
         super().__init__(placeholder="Select your crypto", options=options, custom_id="crypto_select")
 
     async def callback(self, interaction: discord.Interaction):
+        # 1. Set the flow's crypto choice
         self.flow.crypto = self.values[0]
         
-        # --- FIXED: Disable select menu but keep it visible ---
+        # 2. Defer and disable the view
         await interaction.response.defer() # Defer first
         view = self.view
         for item in view.children:
-            item.disabled = True
-        self.placeholder = self.values[0].upper()
+            if isinstance(item, discord.ui.Select):
+                item.disabled = True
+                item.placeholder = self.values[0].upper()
         await interaction.edit_original_response(view=view)
         
-        await self.flow.send_crypto_invoice(interaction) # Call final step
+        # 3. Call the final step
+        await self.flow.send_crypto_invoice(interaction) 
 
 
 # -------------------------------------------------
