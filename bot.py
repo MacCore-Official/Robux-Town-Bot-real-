@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + INTERACTION FIX)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + CORRECT INTERACTION LOGIC)
 import os
 import asyncio
 import json
@@ -344,11 +344,11 @@ async def apply_discount(flow, code):
         await flow.thread.send(f"{EMOJI_WARNING} Coupon code `{code}` is invalid. Using standard pricing.", delete_after=10)
 
 # -------------------------------------------------
-# PURCHASE FLOW CLASS
+# PURCHASE FLOW CLASS (REWRITTEN)
 # -------------------------------------------------
 class PurchaseFlow(discord.ui.View):
     def __init__(self, user_id, thread):
-        super().__init__(timeout=None)
+        super().__init__(timeout=300) # 5 minute timeout for the view
         self.user_id = user_id
         self.thread = thread
         self.robux = 0
@@ -356,13 +356,20 @@ class PurchaseFlow(discord.ui.View):
         self.method = ""
         self.crypto = ""
         self.discount_code = None
+        self.current_step = 0
+        self.message: discord.Message = None # To store the message we are editing
+
+    async def start_flow(self):
+        """Starts the flow by sending step 1."""
+        await self.send_step(1)
 
     async def send_step(self, step: int):
+        self.current_step = step
         color = 0x00A3FF
-        current_view = discord.ui.View(timeout=None) # Start with an empty view for new messages
+        embed = None
+        view = discord.ui.View(timeout=None)
 
         if step == 1:
-            # --- MODIFIED: Send and Pin Disclaimer FIRST ---
             try:
                 disclaimer_message = await send_disclaimer_embed(self.thread)
                 await disclaimer_message.pin()
@@ -371,22 +378,18 @@ class PurchaseFlow(discord.ui.View):
             except Exception as e:
                 print(f"Error pinning message: {e}")
             
-            # --- THEN Send the Start Embed ---
             embed = discord.Embed(title="Would you like to start buying robux? (1/6)", color=color)
             embed.description = "\n\nPlease click \"Yes\" if you would like to start purchasing your Robux."
-            current_view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_1"))
-            current_view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_1"))
-            await self.thread.send(embed=embed, view=current_view)
+            view.add_item(Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_1", flow=self))
+            view.add_item(Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_1", flow=self))
             
         elif step == 2:
             embed = discord.Embed(title="How much robux would you like to buy? (2/6)", color=color)
             embed.description = "\n\nPlease specify the amount of Robux you would like to purchase:\n\n**The minimum order amount is 10,000 Robux**"
-            await self.thread.send(embed=embed)
             
         elif step == 3:
             embed = discord.Embed(title="Do you have a discount code? (3/6)", color=color)
             embed.description = "\n\nEnter your coupon code below, or type **'SKIP'** to continue to the standard pricing."
-            await self.thread.send(embed=embed)
             
         elif step == 4:
             rate_per_1k = get_price(1000)
@@ -398,83 +401,36 @@ class PurchaseFlow(discord.ui.View):
                 f"Standard Rate: **${rate_per_1k:.2f} per 1,000 {EMOJI_ROBUX}**\n\n"
                 f"Total Price in USD: **${self.price:.2f}**"
             )
-            current_view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_4"))
-            current_view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_4"))
-            await self.thread.send(embed=embed, view=current_view)
-            
+            view.add_item(Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_4", flow=self))
+            view.add_item(Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_4", flow=self))
+
         elif step == 5:
             embed = discord.Embed(title="Please select your preferred payment method (5/6)", color=color)
             embed.description = "\n\nChoose your payment method below:"
-            select = discord.ui.Select(
-                placeholder="Select your payment method",
-                custom_id="payment_select",
-                options=[
-                    discord.SelectOption(label="Cryptocurrency", value="crypto", emoji=EMOJI_CRYPTO),
-                    discord.SelectOption(label="Card (G2A)", value="card", emoji=EMOJI_CARD),
-                    discord.SelectOption(label="PayPal (Eneba)", value="paypal", emoji=EMOJI_PAYPAL),
-                    discord.SelectOption(label="Giftcards", value="gift", emoji=EMOJI_PAYMENT_SUPPORT),
-                ]
-            )
-            async def payment_callback_wrapper(interaction: discord.Interaction):
-                # --- FIXED: Defer first, then edit, then call back ---
-                await interaction.response.defer() # 1. Acknowledge immediately
-                
-                view = interaction.message.view # 2. Get the view
-                if view:
-                    for item in view.children:
-                        if isinstance(item, discord.ui.Select):
-                            item.disabled = True
-                            item.placeholder = interaction.data["values"][0].capitalize() 
-                    await interaction.edit_original_response(view=view) # 3. Edit the message
-                
-                await self.payment_callback(interaction) # 4. Proceed
-                
-            select.callback = payment_callback_wrapper
-            current_view.add_item(select)
-            await self.thread.send(embed=embed, view=current_view)
-
-    async def payment_callback(self, interaction: discord.Interaction):
-        self.method = interaction.data["values"][0]
-        # No defer() needed here as we already responded in the wrapper
+            view.add_item(PaymentSelect(flow=self))
         
-        if self.method == "crypto":
-            embed = discord.Embed(title="Select Cryptocurrency", color=0x00A3FF)
-            embed.description = "\n\nWhich coin will you be sending?"
-            select = discord.ui.Select(
-                placeholder="Select your crypto",
-                custom_id="crypto_select",
-                options=[
-                    discord.SelectOption(label="BTC", value="btc", emoji=EMOJI_BITCOIN),
-                    discord.SelectOption(label="LTC", value="ltc", emoji=EMOJI_LITECOIN),
-                    discord.SelectOption(label="ETH", value="eth", emoji=EMOJI_ETHEREUM),
-                    discord.SelectOption(label="SOL", value="sol", emoji=EMOJI_SOLANA),
-                ]
-            )
-            async def crypto_callback_wrapper(interaction: discord.Interaction):
-                # --- FIXED: Defer first, then edit, then call back ---
-                await interaction.response.defer() # 1. Acknowledge immediately
+        if embed:
+            if view.children: # Only send view if it has buttons/selects
+                self.message = await self.thread.send(embed=embed, view=view)
+            else:
+                self.message = await self.thread.send(embed=embed)
 
-                view = interaction.message.view # 2. Get the view
-                if view:
-                    for item in view.children:
-                        if isinstance(item, discord.ui.Select):
-                            item.disabled = True
-                            item.placeholder = interaction.data["values"][0].upper() 
-                    await interaction.edit_original_response(view=view) # 3. Edit the message
-
-                await self.crypto_callback(interaction) # 4. Proceed
-                
-            select.callback = crypto_callback_wrapper
-            current_view = discord.ui.View(timeout=None)
-            current_view.add_item(select)
-            await interaction.followup.send(embed=embed, view=current_view) # Use followup since we deferred
+    async def send_payment_invoice(self, interaction: discord.Interaction):
+        name = "Giftcard" if self.method == "gift" else self.method
+        details = ""
+        if self.method == "card":
+             details = f"**You must purchase a Rewarble Card from G2A** for the amount and submit the code.\n**G2A Link:** [Buy Rewarble Card Here]({G2A_REWARBLE_LINK})"
+        elif self.method == "paypal":
+             details = f"**You must purchase a Rewarble Card from Eneba** using PayPal/Card and submit the code.\n**Eneba Link:** [Buy Rewarble Card Here]({ENEBA_REWARBLE_LINK})"
         else:
-            await self.send_payment_invoice(interaction)
-
-    async def crypto_callback(self, interaction: discord.Interaction):
-        self.crypto = interaction.data["values"][0]
-        # No defer() needed here
-        await self.send_crypto_invoice(interaction)
+             details = "Please purchase the necessary giftcard and prepare to submit the code/details."
+             
+        embed = discord.Embed(title=f"{name.upper()} Payment Invoice (6/6)", color=0x00A3FF)
+        embed.description = f"Send **${self.price:.2f} USD** via **{name}**.\n\n{details}"
+        
+        view = discord.ui.View(timeout=None)
+        view.add_item(Button(label="Submit Details", style=discord.ButtonStyle.blurple, custom_id="submit_details", flow=self))
+        await interaction.followup.send(embed=embed, view=view) # Use followup
 
     async def send_crypto_invoice(self, interaction: discord.Interaction):
         price_usd = self.price
@@ -499,25 +455,109 @@ class PurchaseFlow(discord.ui.View):
         embed.set_image(url=qr_url)
         
         view = discord.ui.View(timeout=None)
-        view.add_item(discord.ui.Button(label="Submit TX Hash", style=discord.ButtonStyle.blurple, custom_id="submit_tx"))
-        await interaction.followup.send(embed=embed, view=view) # Use followup since we deferred
+        view.add_item(Button(label="Submit TX Hash", style=discord.ButtonStyle.blurple, custom_id="submit_tx", flow=self))
+        await interaction.followup.send(embed=embed, view=view) # Use followup
 
-    async def send_payment_invoice(self, interaction: discord.Interaction):
-        name = "Giftcard" if self.method == "gift" else self.method
-        details = ""
-        if self.method == "card":
-             details = f"**You must purchase a Rewarble Card from G2A** for the amount and submit the code.\n**G2A Link:** [Buy Rewarble Card Here]({G2A_REWARBLE_LINK})"
-        elif self.method == "paypal":
-             details = f"**You must purchase a Rewarble Card from Eneba** using PayPal/Card and submit the code.\n**Eneba Link:** [Buy Rewarble Card Here]({ENEBA_REWARBLE_LINK})"
-        else:
-             details = "Please purchase the necessary giftcard and prepare to submit the code/details."
-             
-        embed = discord.Embed(title=f"{name.upper()} Payment Invoice (6/6)", color=0x00A3FF)
-        embed.description = f"Send **${self.price:.2f} USD** via **{name}**.\n\n{details}"
+# --- Custom Button Class for Purchase Flow ---
+class Button(discord.ui.Button):
+    def __init__(self, label: str, style: discord.ButtonStyle, custom_id: str, flow: PurchaseFlow, emoji: str = None):
+        super().__init__(label=label, style=style, custom_id=custom_id, emoji=emoji)
+        self.flow = flow
+
+    async def callback(self, interaction: discord.Interaction):
+        # --- FIXED: Defer first, then edit ---
+        await interaction.response.defer()
         
-        view = discord.ui.View(timeout=None)
-        view.add_item(discord.ui.Button(label="Submit Details", style=discord.ButtonStyle.blurple, custom_id="submit_details"))
-        await interaction.followup.send(embed=embed, view=view) # Use followup since we deferred
+        view = self.view
+        for item in view.children:
+            item.disabled = True
+        await interaction.edit_original_response(view=view)
+
+        # --- Button Logic ---
+        if self.custom_id == "flow_yes_1":
+            await self.flow.send_step(2)
+        elif self.custom_id == "flow_no_1":
+            await self.flow.thread.send("Purchase flow cancelled.")
+            await self.flow.thread.edit(archived=True, locked=True)
+            active_flows.pop(self.flow.user_id, None)
+        elif self.custom_id == "flow_yes_4":
+            await self.flow.send_step(5)
+        elif self.custom_id == "flow_no_4":
+            await self.flow.thread.send("Cancelled. Restarting...")
+            await self.flow.thread.edit(archived=True, locked=True)
+            active_flows.pop(self.flow.user_id, None)
+            
+            # Start a new thread
+            info_channel = bot.get_channel(INFO_CHANNEL_ID)
+            thread = await info_channel.create_thread(
+                name=f"Purchase-{interaction.user.name}-{random.randint(1000,9999)}",
+                auto_archive_duration=1440,
+                type=discord.ChannelType.private_thread
+            )
+            await thread.add_user(interaction.user)
+            new_flow = PurchaseFlow(interaction.user.id, thread)
+            active_flows[interaction.user.id] = new_flow
+            await new_flow.start_flow()
+        
+        elif self.custom_id == "submit_tx":
+            modal = PaymentModal("Cryptocurrency", self.flow.robux, self.flow.price, self.flow.crypto, self.flow.discount_code)
+            await interaction.followup.send_modal(modal) # Use followup.send_modal
+        elif self.custom_id == "submit_details":
+            modal = PaymentModal(self.flow.method, self.flow.robux, self.flow.price, discount_code=self.flow.discount_code)
+            await interaction.followup.send_modal(modal) # Use followup.send_modal
+
+# --- Custom Select Menus for Purchase Flow ---
+class PaymentSelect(discord.ui.Select):
+    def __init__(self, flow: PurchaseFlow):
+        self.flow = flow
+        options = [
+            discord.SelectOption(label="Cryptocurrency", value="crypto", emoji=EMOJI_CRYPTO),
+            discord.SelectOption(label="Card (G2A)", value="card", emoji=EMOJI_CARD),
+            discord.SelectOption(label="PayPal (Eneba)", value="paypal", emoji=EMOJI_PAYPAL),
+            discord.SelectOption(label="Giftcards", value="gift", emoji=EMOJI_PAYMENT_SUPPORT),
+        ]
+        super().__init__(placeholder="Select your payment method", options=options, custom_id="payment_select")
+
+    async def callback(self, interaction: discord.Interaction):
+        self.flow.method = self.values[0]
+        
+        # --- FIXED: Disable select menu but keep it visible ---
+        await interaction.response.defer() # Defer first
+        view = self.view
+        for item in view.children:
+            item.disabled = True
+        self.placeholder = self.values[0].capitalize()
+        await interaction.edit_original_response(view=view)
+
+        if self.values[0] == "crypto":
+            await self.flow.payment_callback(interaction) # Call the next step
+        else:
+            await self.flow.send_payment_invoice(interaction)
+
+class CryptoSelect(discord.ui.Select):
+    def __init__(self, flow: PurchaseFlow):
+        self.flow = flow
+        options = [
+            discord.SelectOption(label="BTC", value="btc", emoji=EMOJI_BITCOIN),
+            discord.SelectOption(label="LTC", value="ltc", emoji=EMOJI_LITECOIN),
+            discord.SelectOption(label="ETH", value="eth", emoji=EMOJI_ETHEREUM),
+            discord.SelectOption(label="SOL", value="sol", emoji=EMOJI_SOLANA),
+        ]
+        super().__init__(placeholder="Select your crypto", options=options, custom_id="crypto_select")
+
+    async def callback(self, interaction: discord.Interaction):
+        self.flow.crypto = self.values[0]
+        
+        # --- FIXED: Disable select menu but keep it visible ---
+        await interaction.response.defer() # Defer first
+        view = self.view
+        for item in view.children:
+            item.disabled = True
+        self.placeholder = self.values[0].upper()
+        await interaction.edit_original_response(view=view)
+        
+        await self.flow.send_crypto_invoice(interaction) # Call final step
+
 
 # -------------------------------------------------
 # PERSISTENT PURCHASE BUTTON (Main entry point)
@@ -566,79 +606,7 @@ class PersistentPurchaseButton(discord.ui.View):
         flow = PurchaseFlow(interaction.user.id, thread)
         active_flows[interaction.user.id] = flow
         await interaction.followup.send(f"{EMOJI_VERIFIED} Purchase started! Check your new private thread: {thread.mention}", ephemeral=True)
-        await flow.send_step(1)
-
-# -------------------------------------------------
-# INTERACTION HANDLER (Main router)
-# -------------------------------------------------
-@bot.event
-async def on_interaction(interaction: discord.Interaction):
-    # This function is now the central router for *all* interactions
-    if not interaction.data or "custom_id" not in interaction.data:
-        return # Ignore interactions without a custom_id (like user commands)
-
-    cid = interaction.data["custom_id"]
-    user_id = interaction.user.id
-    flow = active_flows.get(user_id)
-
-    # === Purchase Button (from PersistentPurchaseButton) ===
-    if cid == "purchase_robux_btn":
-        # This is handled by the PersistentPurchaseButton class, 
-        # but we must call process_commands to register the view listener.
-        # A bit redundant, but ensures stability.
-        pass # The view itself will handle this.
-
-    # === Purchase Flow Buttons ===
-    elif cid.startswith("flow_") and flow:
-        # --- FIXED: Defer first, then edit ---
-        
-        # 1. Acknowledge the interaction immediately
-        await interaction.response.defer() 
-        
-        # 2. Get the view from the message and disable its components
-        view = interaction.message.view
-        if view:
-            for item in view.children:
-                item.disabled = True
-            # 3. Edit the original message with the disabled view
-            await interaction.edit_original_response(view=view)
-        
-        # 4. Now safely perform the next action
-        if cid == "flow_yes_1":
-            await flow.send_step(2)
-        elif cid == "flow_no_1":
-            await flow.thread.send("Purchase flow cancelled.")
-            await flow.thread.edit(archived=True, locked=True)
-            active_flows.pop(user_id, None)
-        elif cid == "flow_yes_4":
-            await flow.send_step(5)
-        elif cid == "flow_no_4":
-            await flow.thread.send("Cancelled. Restarting...")
-            await flow.thread.edit(archived=True, locked=True)
-            active_flows.pop(user_id, None)
-            
-            # Start a new thread
-            info_channel = bot.get_channel(INFO_CHANNEL_ID)
-            thread = await info_channel.create_thread(
-                name=f"Purchase-{interaction.user.name}-{random.randint(1000,9999)}",
-                auto_archive_duration=1440,
-                type=discord.ChannelType.private_thread
-            )
-            await thread.add_user(interaction.user)
-            new_flow = PurchaseFlow(interaction.user.id, thread)
-            active_flows[interaction.user.id] = new_flow
-            await new_flow.send_step(1)
-
-    # === Payment Submission Modals ===
-    elif cid == "submit_tx" and flow:
-        modal = PaymentModal("Cryptocurrency", flow.robux, flow.price, flow.crypto, flow.discount_code)
-        await interaction.response.send_modal(modal)
-    elif cid == "submit_details" and flow:
-        modal = PaymentModal(flow.method, flow.robux, flow.price, discount_code=flow.discount_code)
-        await interaction.response.send_modal(modal)
-
-    # This is crucial for Persistent Views to be processed
-    await bot.process_commands(interaction.message)
+        await flow.start_flow() # Use the new start_flow method
 
 
 # -------------------------------------------------
@@ -686,7 +654,7 @@ async def on_message(message: discord.Message):
         return await bot.process_commands(message) # Process commands if not their thread
 
     # Check 1: Waiting for Robux Amount (Step 2)
-    if flow.robux == 0 and re.fullmatch(r"[\d,]+", message.content.strip()):
+    if flow.current_step == 2 and flow.robux == 0 and re.fullmatch(r"[\d,]+", message.content.strip()):
         try:
             amount = int(message.content.replace(",", "").strip())
             if amount < 10000:
@@ -705,7 +673,7 @@ async def on_message(message: discord.Message):
             pass # Not a valid number
 
     # Check 2: Waiting for Discount Code (Step 3)
-    if flow.robux > 0 and flow.price == 0.0:
+    if flow.current_step == 3 and flow.robux > 0 and flow.price == 0.0:
         code = message.content.strip()
         # --- MODIFIED: DO NOT DELETE USER MESSAGE ---
         # await message.delete() 
