@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + AESTHETICS + CLOSE ALL)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + AESTHETICS + FIX)
 import os
 import asyncio
 import json
@@ -417,7 +417,7 @@ class PurchaseFlow(discord.ui.View):
             )
             async def payment_callback_wrapper(interaction: discord.Interaction):
                 # --- MODIFIED: Disable select menu but keep it visible ---
-                view = interaction.message.view
+                view = interaction.view # Get the view from the interaction
                 if view:
                     # Find the select menu and disable it
                     for item in view.children:
@@ -453,7 +453,7 @@ class PurchaseFlow(discord.ui.View):
             )
             async def crypto_callback_wrapper(interaction: discord.Interaction):
                 # --- MODIFIED: Disable select menu but keep it visible ---
-                view = interaction.message.view
+                view = interaction.view # Get the view from the interaction
                 if view:
                     for item in view.children:
                         if isinstance(item, discord.ui.Select):
@@ -593,8 +593,8 @@ async def on_interaction(interaction: discord.Interaction):
     elif cid.startswith("flow_") and flow:
         # --- MODIFIED: Edit message to disable buttons on click ---
         
-        # Get the original view from the message
-        view = interaction.message.view
+        # Get the original view from the interaction
+        view = interaction.view
         if view:
             # Disable all components in that view
             for item in view.children:
