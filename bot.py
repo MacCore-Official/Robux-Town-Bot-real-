@@ -304,17 +304,19 @@ class CloseTicketView(discord.ui.View):
 # -------------------------------------------------
 # DISCLAIMER EMBED
 # -------------------------------------------------
-async def send_disclaimer_embed(thread: discord.Thread):
+async def send_disclaimer_embed(thread: discord.Thread) -> discord.Message:
+    """Sends the disclaimer embed and returns the message object."""
     embed = discord.Embed(
         title="⚠️ Please Note",
         description=(
-            "**Please make sure that all conversations related to the deal are done within this ticket.**\n\n"
-            "Our staff will **never DM you** regarding any deals."
+            "Please make sure that all conversations related to the deal are done within this ticket. Failing to do so may put you at risk of being scammed.\n\n"
+            "Our staff will **never DM you** regarding any deals that are active or have already been completed."
         ),
         color=0xFFA500
     )
     view = CloseTicketView(thread.id)
-    await thread.send(embed=embed, view=view)
+    message = await thread.send(embed=embed, view=view)
+    return message
 
 # -------------------------------------------------
 # PURCHASE FLOW HELPER
@@ -358,9 +360,18 @@ class PurchaseFlow(discord.ui.View):
     async def send_step(self, step: int):
         color = 0x00A3FF
         if step == 1:
-            await send_disclaimer_embed(self.thread)
+            # --- MODIFIED: Send and Pin Disclaimer FIRST ---
+            try:
+                disclaimer_message = await send_disclaimer_embed(self.thread)
+                await disclaimer_message.pin()
+            except discord.Forbidden:
+                print(f"Warning: Missing 'Manage Messages' permission in thread {self.thread.id} to pin.")
+            except Exception as e:
+                print(f"Error pinning message: {e}")
+            
+            # --- THEN Send the Start Embed ---
             embed = discord.Embed(title="Would you like to start buying robux? (1/6)", color=color)
-            embed.description = "\n\nPlease click \"Yes\" to begin."
+            embed.description = "\n\nPlease click \"Yes\" if you would like to start purchasing your Robux."
             view = discord.ui.View(timeout=None)
             view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_1"))
             view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_1"))
@@ -405,7 +416,10 @@ class PurchaseFlow(discord.ui.View):
                 ]
             )
             async def payment_callback_wrapper(interaction: discord.Interaction):
+                # --- MODIFIED: Disable select menu after choice ---
+                await interaction.response.edit_message(view=None)
                 await self.payment_callback(interaction)
+                
             select.callback = payment_callback_wrapper
             view = discord.ui.View(timeout=None)
             view.add_item(select)
@@ -413,7 +427,8 @@ class PurchaseFlow(discord.ui.View):
 
     async def payment_callback(self, interaction: discord.Interaction):
         self.method = interaction.data["values"][0]
-        await interaction.response.defer()
+        # No defer() needed here as we already responded in the wrapper
+        
         if self.method == "crypto":
             embed = discord.Embed(title="Select Cryptocurrency", color=0x00A3FF)
             embed.description = "\n\nWhich coin will you be sending?"
@@ -428,7 +443,10 @@ class PurchaseFlow(discord.ui.View):
                 ]
             )
             async def crypto_callback_wrapper(interaction: discord.Interaction):
+                # --- MODIFIED: Disable select menu after choice ---
+                await interaction.response.edit_message(view=None)
                 await self.crypto_callback(interaction)
+                
             select.callback = crypto_callback_wrapper
             view = discord.ui.View(timeout=None)
             view.add_item(select)
@@ -438,7 +456,7 @@ class PurchaseFlow(discord.ui.View):
 
     async def crypto_callback(self, interaction: discord.Interaction):
         self.crypto = interaction.data["values"][0]
-        await interaction.response.defer()
+        # No defer() needed here
         await self.send_crypto_invoice(interaction)
 
     async def send_crypto_invoice(self, interaction: discord.Interaction):
@@ -541,19 +559,20 @@ async def on_interaction(interaction: discord.Interaction):
 
     # === Purchase Flow Buttons ===
     elif cid.startswith("flow_") and flow:
+        # --- MODIFIED: Edit message to disable buttons on click ---
         if cid == "flow_yes_1":
-            await interaction.response.defer()
+            await interaction.response.edit_message(view=None)
             await flow.send_step(2)
         elif cid == "flow_no_1":
-            await interaction.response.defer()
+            await interaction.response.edit_message(view=None)
             await flow.thread.send("Purchase flow cancelled.")
             await flow.thread.edit(archived=True, locked=True)
             active_flows.pop(user_id, None)
         elif cid == "flow_yes_4":
-            await interaction.response.defer()
+            await interaction.response.edit_message(view=None)
             await flow.send_step(5)
         elif cid == "flow_no_4":
-            await interaction.response.defer()
+            await interaction.response.edit_message(view=None)
             await flow.thread.send("Cancelled. Restarting...")
             await flow.thread.edit(archived=True, locked=True)
             active_flows.pop(user_id, None)
@@ -638,7 +657,8 @@ async def on_message(message: discord.Message):
                 return
             
             flow.robux = amount
-            await message.delete()
+            # --- MODIFIED: DO NOT DELETE USER MESSAGE ---
+            # await message.delete() 
             await flow.send_step(3) # Move to discount step
             return
         except ValueError:
@@ -647,7 +667,8 @@ async def on_message(message: discord.Message):
     # Check 2: Waiting for Discount Code (Step 3)
     if flow.robux > 0 and flow.price == 0.0:
         code = message.content.strip()
-        await message.delete()
+        # --- MODIFIED: DO NOT DELETE USER MESSAGE ---
+        # await message.delete() 
         
         await apply_discount(flow, code) # Helper function handles logic
         
@@ -735,7 +756,7 @@ async def send_info_embed(force_new: bool = False):
         print(f"ERROR: INFO_CHANNEL_ID ({INFO_CHANNEL_ID}) not found.")
         return
 
-    # NEW: Re-styled embed with more info
+    # --- MODIFIED: New embed description and layout ---
     embed = discord.Embed(
         title="Welcome to Robux Town™",
         description=(
