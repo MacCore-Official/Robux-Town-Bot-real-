@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + AESTHETICS)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + AESTHETICS + CLOSE ALL)
 import os
 import asyncio
 import json
@@ -417,16 +417,17 @@ class PurchaseFlow(discord.ui.View):
             )
             async def payment_callback_wrapper(interaction: discord.Interaction):
                 # --- MODIFIED: Disable select menu but keep it visible ---
-                view_to_disable = discord.ui.View()
-                # Re-create the select menu but disabled
-                disabled_select = discord.ui.Select(
-                    placeholder=interaction.data["values"][0].capitalize(), 
-                    custom_id="payment_select_disabled",
-                    disabled=True,
-                    options=[discord.SelectOption(label=interaction.data["values"][0].capitalize(), value=interaction.data["values"][0])]
-                )
-                view_to_disable.add_item(disabled_select)
-                await interaction.response.edit_message(view=view_to_disable)
+                view = interaction.message.view
+                if view:
+                    # Find the select menu and disable it
+                    for item in view.children:
+                        if isinstance(item, discord.ui.Select):
+                            item.disabled = True
+                            item.placeholder = interaction.data["values"][0].capitalize() # Show what was selected
+                    await interaction.response.edit_message(view=view)
+                else:
+                    await interaction.response.defer() # Fallback
+                
                 await self.payment_callback(interaction)
                 
             select.callback = payment_callback_wrapper
@@ -452,15 +453,16 @@ class PurchaseFlow(discord.ui.View):
             )
             async def crypto_callback_wrapper(interaction: discord.Interaction):
                 # --- MODIFIED: Disable select menu but keep it visible ---
-                view_to_disable = discord.ui.View()
-                disabled_select = discord.ui.Select(
-                    placeholder=interaction.data["values"][0].upper(), 
-                    custom_id="crypto_select_disabled",
-                    disabled=True,
-                    options=[discord.SelectOption(label=interaction.data["values"][0].upper(), value=interaction.data["values"][0])]
-                )
-                view_to_disable.add_item(disabled_select)
-                await interaction.response.edit_message(view=view_to_disable)
+                view = interaction.message.view
+                if view:
+                    for item in view.children:
+                        if isinstance(item, discord.ui.Select):
+                            item.disabled = True
+                            item.placeholder = interaction.data["values"][0].upper() # Show what was selected
+                    await interaction.response.edit_message(view=view)
+                else:
+                    await interaction.response.defer() # Fallback
+
                 await self.crypto_callback(interaction)
                 
             select.callback = crypto_callback_wrapper
@@ -531,21 +533,35 @@ class PersistentPurchaseButton(discord.ui.View):
         
         if user_id in active_flows:
             flow = active_flows[user_id]
-            if not flow.thread.archived:
+            # Check if thread exists and is not archived
+            if flow.thread and not flow.thread.archived:
                 await interaction.response.send_message(f"{EMOJI_WARNING} You already have an active purchase flow in {flow.thread.mention}!", ephemeral=True)
                 return
+            else:
+                # Clean up stale flow
+                active_flows.pop(user_id, None)
         
         await interaction.response.defer(ephemeral=True)
         thread_name = f"Purchase-{interaction.user.name}-{random.randint(1000,9999)}"
         
         # Ensure thread is created in the main info channel
-        info_channel = bot.get_channel(INFO_CHANNEL_ID) or interaction.channel
+        info_channel = bot.get_channel(INFO_CHANNEL_ID)
+        if not info_channel:
+            info_channel = interaction.channel # Fallback
         
-        thread = await info_channel.create_thread(
-            name=thread_name,
-            auto_archive_duration=1440,
-            type=discord.ChannelType.private_thread
-        )
+        try:
+            thread = await info_channel.create_thread(
+                name=thread_name,
+                auto_archive_duration=1440,
+                type=discord.ChannelType.private_thread
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(f"{EMOJI_WARNING} I don't have permission to create threads in {info_channel.mention}. Please contact staff.", ephemeral=True)
+            return
+        except Exception as e:
+            await interaction.followup.send(f"An error occurred: {e}", ephemeral=True)
+            return
+
         await thread.add_user(interaction.user)
         
         flow = PurchaseFlow(interaction.user.id, thread)
@@ -577,25 +593,28 @@ async def on_interaction(interaction: discord.Interaction):
     elif cid.startswith("flow_") and flow:
         # --- MODIFIED: Edit message to disable buttons on click ---
         
-        # Create a new view to hold the disabled buttons
-        disabled_view = discord.ui.View(timeout=None)
-        for item in interaction.message.components[0].children:
-            item.disabled = True
-            disabled_view.add_item(item)
+        # Get the original view from the message
+        view = interaction.message.view
+        if view:
+            # Disable all components in that view
+            for item in view.children:
+                item.disabled = True
+            # Respond by editing the message with the disabled view
+            await interaction.response.edit_message(view=view)
+        else:
+            # Fallback if view is somehow gone
+            await interaction.response.defer()
+
             
         if cid == "flow_yes_1":
-            await interaction.response.edit_message(view=disabled_view)
             await flow.send_step(2)
         elif cid == "flow_no_1":
-            await interaction.response.edit_message(view=disabled_view)
             await flow.thread.send("Purchase flow cancelled.")
             await flow.thread.edit(archived=True, locked=True)
             active_flows.pop(user_id, None)
         elif cid == "flow_yes_4":
-            await interaction.response.edit_message(view=disabled_view)
             await flow.send_step(5)
         elif cid == "flow_no_4":
-            await interaction.response.edit_message(view=disabled_view)
             await flow.thread.send("Cancelled. Restarting...")
             await flow.thread.edit(archived=True, locked=True)
             active_flows.pop(user_id, None)
@@ -665,7 +684,7 @@ async def on_message(message: discord.Message):
         return await bot.process_commands(message) # Process commands if not in a thread
 
     flow = active_flows.get(message.author.id)
-    if not flow or flow.thread.id != message.channel.id:
+    if not flow or not flow.thread or flow.thread.id != message.channel.id:
         return await bot.process_commands(message) # Process commands if not their thread
 
     # Check 1: Waiting for Robux Amount (Step 2)
@@ -716,6 +735,23 @@ def is_staff():
         return ctx.author.guild_permissions.administrator
     return commands.check(predicate)
 
+# --- NEW: Helper function to close all tickets ---
+async def close_all_active_tickets(guild: discord.Guild):
+    """Finds all active 'Purchase-' threads, archives/locks them, and clears the cache."""
+    closed_count = 0
+    # Fetch all active threads in the guild
+    for thread in guild.threads:
+        if thread.name.startswith("Purchase-") and not thread.archived:
+            try:
+                await thread.edit(archived=True, locked=True)
+                closed_count += 1
+            except Exception as e:
+                print(f"Failed to close thread {thread.id}: {e}")
+    
+    # Clear the active flow cache
+    active_flows.clear()
+    return closed_count
+
 @bot.command(name="admin")
 @is_staff()
 async def admin_panel(ctx):
@@ -742,6 +778,11 @@ async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: 
         await interaction.response.defer(ephemeral=True)
         await send_info_embed(force_new=True) # This is the main purchase button embed
         await interaction.followup.send(f"{EMOJI_VERIFIED} Main Purchase Embed has been reset.", ephemeral=True)
+    elif cid == "admin_close_all_tickets":
+        await interaction.response.defer(ephemeral=True)
+        closed_count = await close_all_active_tickets(interaction.guild)
+        await interaction.followup.send(f"{EMOJI_VERIFIED} Successfully closed and cleared **{closed_count}** active tickets. All purchase flows have been reset.", ephemeral=True)
+
 
 # -------------------------------------------------
 # ADMIN PANEL VIEW (The Interactive Menu)
@@ -769,6 +810,10 @@ class AdminPanel(discord.ui.View):
     @discord.ui.button(label="Reset Purchase Embed", style=discord.ButtonStyle.red, custom_id="admin_reset_embed", emoji="🔄")
     async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_reset_embed")
+        
+    @discord.ui.button(label="Close All Tickets", style=discord.ButtonStyle.danger, custom_id="admin_close_all_tickets", emoji="🚨", row=2)
+    async def close_all_tickets_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_close_all_tickets")
 
 # -------------------------------------------------
 # INFO EMBED (Main Purchase Button)
