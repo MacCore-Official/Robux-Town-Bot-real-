@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + AESTHETICS + FIX)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + INTERACTION FIX)
 import os
 import asyncio
 import json
@@ -416,19 +416,18 @@ class PurchaseFlow(discord.ui.View):
                 ]
             )
             async def payment_callback_wrapper(interaction: discord.Interaction):
-                # --- MODIFIED: Disable select menu but keep it visible ---
-                view = interaction.message.view # CORRECT: Get view from the message
+                # --- FIXED: Defer first, then edit, then call back ---
+                await interaction.response.defer() # 1. Acknowledge immediately
+                
+                view = interaction.message.view # 2. Get the view
                 if view:
-                    # Find the select menu and disable it
                     for item in view.children:
                         if isinstance(item, discord.ui.Select):
                             item.disabled = True
-                            item.placeholder = interaction.data["values"][0].capitalize() # Show what was selected
-                    await interaction.response.edit_message(view=view)
-                else:
-                    await interaction.response.defer() # Fallback
+                            item.placeholder = interaction.data["values"][0].capitalize() 
+                    await interaction.edit_original_response(view=view) # 3. Edit the message
                 
-                await self.payment_callback(interaction)
+                await self.payment_callback(interaction) # 4. Proceed
                 
             select.callback = payment_callback_wrapper
             current_view.add_item(select)
@@ -452,23 +451,23 @@ class PurchaseFlow(discord.ui.View):
                 ]
             )
             async def crypto_callback_wrapper(interaction: discord.Interaction):
-                # --- MODIFIED: Disable select menu but keep it visible ---
-                view = interaction.message.view # CORRECT: Get view from the message
+                # --- FIXED: Defer first, then edit, then call back ---
+                await interaction.response.defer() # 1. Acknowledge immediately
+
+                view = interaction.message.view # 2. Get the view
                 if view:
                     for item in view.children:
                         if isinstance(item, discord.ui.Select):
                             item.disabled = True
-                            item.placeholder = interaction.data["values"][0].upper() # Show what was selected
-                    await interaction.response.edit_message(view=view)
-                else:
-                    await interaction.response.defer() # Fallback
+                            item.placeholder = interaction.data["values"][0].upper() 
+                    await interaction.edit_original_response(view=view) # 3. Edit the message
 
-                await self.crypto_callback(interaction)
+                await self.crypto_callback(interaction) # 4. Proceed
                 
             select.callback = crypto_callback_wrapper
             current_view = discord.ui.View(timeout=None)
             current_view.add_item(select)
-            await interaction.followup.send(embed=embed, view=current_view)
+            await interaction.followup.send(embed=embed, view=current_view) # Use followup since we deferred
         else:
             await self.send_payment_invoice(interaction)
 
@@ -501,7 +500,7 @@ class PurchaseFlow(discord.ui.View):
         
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(label="Submit TX Hash", style=discord.ButtonStyle.blurple, custom_id="submit_tx"))
-        await interaction.followup.send(embed=embed, view=view)
+        await interaction.followup.send(embed=embed, view=view) # Use followup since we deferred
 
     async def send_payment_invoice(self, interaction: discord.Interaction):
         name = "Giftcard" if self.method == "gift" else self.method
@@ -518,7 +517,7 @@ class PurchaseFlow(discord.ui.View):
         
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(label="Submit Details", style=discord.ButtonStyle.blurple, custom_id="submit_details"))
-        await interaction.followup.send(embed=embed, view=view)
+        await interaction.followup.send(embed=embed, view=view) # Use followup since we deferred
 
 # -------------------------------------------------
 # PERSISTENT PURCHASE BUTTON (Main entry point)
@@ -591,21 +590,20 @@ async def on_interaction(interaction: discord.Interaction):
 
     # === Purchase Flow Buttons ===
     elif cid.startswith("flow_") and flow:
-        # --- MODIFIED: Edit message to disable buttons on click ---
+        # --- FIXED: Defer first, then edit ---
         
-        # Get the original view from the interaction's message
+        # 1. Acknowledge the interaction immediately
+        await interaction.response.defer() 
+        
+        # 2. Get the view from the message and disable its components
         view = interaction.message.view
         if view:
-            # Disable all components in that view
             for item in view.children:
                 item.disabled = True
-            # Respond by editing the message with the disabled view
-            await interaction.response.edit_message(view=view)
-        else:
-            # Fallback if view is somehow gone
-            await interaction.response.defer()
-
-            
+            # 3. Edit the original message with the disabled view
+            await interaction.edit_original_response(view=view)
+        
+        # 4. Now safely perform the next action
         if cid == "flow_yes_1":
             await flow.send_step(2)
         elif cid == "flow_no_1":
