@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – CORE LOGIC (AUTOMATIC ORDER + DISCOUNT BY MESSAGE)
+# Robux Town™ – CORE LOGIC (AUTOMATIC ORDER + ADMIN DISCOUNT PANEL)
 import os
 import asyncio
 import json
@@ -33,7 +33,7 @@ active_flows = {} # Global dictionary for tracking user flows
 # Channels (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 INFO_CHANNEL_ID           = 1435516058105675818 # Where the 'Purchase Robux' button will live
 LOG_CHANNEL_ID            = 1435516058286035020 # Staff payment submission log
-STAFF_ROLE_ID             = 1435516057526734991 # For the discount-by-message feature
+STAFF_ROLE_ID             = 1435516057526734991 # For the +admin command
 STAFF_DM_IDS              = [1422665161466187976,1269145029943758899] # Staff to notify on payment
 
 
@@ -50,8 +50,9 @@ EMOJI_BITCOIN        = "<:Bitcoin:1435526466527039579>"
 EMOJI_LITECOIN       = "<:Litecoin:1435526448684339321>"
 EMOJI_ETHEREUM       = "<:Ethereum:1435526479126597745>"
 EMOJI_SOLANA         = "<:Solana:1435526514115350549>"
-EMOJI_LOCK           = "🔒"
-EMOJI_MAX            = "🛑"
+EMOJI_COG            = "⚙️" 
+EMOJI_LOCK           = "🔒" 
+EMOJI_MAX            = "🛑" 
 
 # -------------------------------------------------
 # PRICING
@@ -133,6 +134,73 @@ async def send_to_staff(order_data: dict):
     channel = bot.get_channel(LOG_CHANNEL_ID)
     if channel:
         await channel.send(embed=embed)
+
+# -------------------------------------------------
+# ADMIN MODALS (FOR +ADMIN)
+# -------------------------------------------------
+class DiscountModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Set New Discount Code", timeout=600)
+        self.code = discord.ui.TextInput(label="Discount Code (e.g., WINTERDEAL)", placeholder="Must be uppercase, one word")
+        self.amount = discord.ui.TextInput(label="Robux Amount Covered by Deal", placeholder="e.g., 100000 (R$ amount user must buy)")
+        self.price = discord.ui.TextInput(label="Discounted Price in USD", placeholder="e.g., 60.00 (the discounted price)")
+        self.add_item(self.code)
+        self.add_item(self.amount)
+        self.add_item(self.price)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        code = self.code.value.upper()
+        try:
+            amount = int(self.amount.value.replace(",", ""))
+            price = float(self.price.value)
+        except ValueError:
+            await interaction.response.send_message(f"{EMOJI_WARNING} Invalid number format for amount or price.", ephemeral=True)
+            return
+
+        config["deals"][code] = {"robux": amount, "price": price, "min_robux_required": amount}
+        save_config(config)
+        await interaction.response.send_message(
+            f"{EMOJI_VERIFIED} Discount code **{code}** set: {amount:,} R$ for **${price:.2f} USD**.",
+            ephemeral=True
+        )
+
+class AddressModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Set Crypto Address", timeout=600)
+        self.coin = discord.ui.TextInput(label="Coin (btc, ltc, eth, sol)", placeholder="e.g., btc", max_length=3)
+        self.address = discord.ui.TextInput(label="New Address", placeholder="Paste the full wallet address here", style=discord.TextStyle.paragraph)
+        self.add_item(self.coin)
+        self.add_item(self.address)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        coin = self.coin.value.lower()
+        addr = self.address.value
+        
+        if coin in config["wallets"]:
+            config["wallets"][coin] = addr
+            save_config(config)
+            await interaction.response.send_message(f"{EMOJI_VERIFIED} Updated **{coin.upper()}** address to:\n`{addr}`", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"{EMOJI_WARNING} Invalid coin specified. Must be one of: `btc`, `ltc`, `eth`, `sol`.", ephemeral=True)
+
+class QRModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Set Crypto QR URL", timeout=600)
+        self.coin = discord.ui.TextInput(label="Coin (btc, ltc, eth, sol)", placeholder="e.g., btc", max_length=3)
+        self.url = discord.ui.TextInput(label="New QR Image URL", placeholder="Must be a direct link to an image (http://...)", style=discord.TextStyle.paragraph)
+        self.add_item(self.coin)
+        self.add_item(self.url)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        coin = self.coin.value.lower()
+        url = self.url.value
+        
+        if coin in config["qr_urls"]:
+            config["qr_urls"][coin] = url
+            save_config(config)
+            await interaction.response.send_message(f"{EMOJI_VERIFIED} Updated **{coin.upper()}** QR URL.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"{EMOJI_WARNING} Invalid coin specified. Must be one of: `btc`, `ltc`, `eth`, `sol`.", ephemeral=True)
 
 # -------------------------------------------------
 # PAYMENT MODAL (Core logic)
@@ -532,7 +600,115 @@ async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
 # -------------------------------------------------
-# ON READY (Simplified)
+# STAFF ADMIN PANEL COMMANDS (+admin)
+# -------------------------------------------------
+def is_staff():
+    async def predicate(ctx):
+        if not ctx.guild:
+            return False
+        if STAFF_ROLE_ID:
+            role = ctx.guild.get_role(STAFF_ROLE_ID)
+            return role in ctx.author.roles
+        return ctx.author.guild_permissions.administrator
+    return commands.check(predicate)
+
+@bot.command(name="admin")
+@is_staff()
+async def admin_panel(ctx):
+    """Opens the interactive staff administration panel."""
+    embed = discord.Embed(
+        title=f"{EMOJI_COG} Staff Administration Panel",
+        description="Select an action to manage bot settings.",
+        color=discord.Color.blue()
+    )
+    await ctx.send(embed=embed, view=AdminPanel(), ephemeral=True)
+
+# --- CENTRALIZED HANDLER FOR ADMIN BUTTONS ---
+async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: str):
+    if cid == "admin_set_address":
+        await interaction.response.send_modal(AddressModal())
+    elif cid == "admin_set_qr":
+        await interaction.response.send_modal(QRModal())
+    elif cid == "admin_set_discount":
+        await interaction.response.send_modal(DiscountModal())
+    elif cid == "admin_reset_embed":
+        await interaction.response.defer(ephemeral=True)
+        await send_info_embed(force_new=True) # This is the main purchase button embed
+        await interaction.followup.send(f"{EMOJI_VERIFIED} Main Purchase Embed has been reset.", ephemeral=True)
+
+# -------------------------------------------------
+# ADMIN PANEL VIEW (The Interactive Menu)
+# -------------------------------------------------
+class AdminPanel(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300) 
+
+    @discord.ui.button(label="Set Crypto Address", style=discord.ButtonStyle.blurple, custom_id="admin_set_address", emoji='🪙')
+    async def set_address_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_set_address")
+
+    @discord.ui.button(label="Set Crypto QR URL", style=discord.ButtonStyle.blurple, custom_id="admin_set_qr", emoji="🖼️")
+    async def set_qr_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_set_qr")
+
+    @discord.ui.button(label="Set Discount Code", style=discord.ButtonStyle.blurple, custom_id="admin_set_discount", emoji="🏷️")
+    async def set_discount_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_set_discount")
+
+    @discord.ui.button(label="Reset Purchase Embed", style=discord.ButtonStyle.red, custom_id="admin_reset_embed", emoji="🔄")
+    async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_reset_embed")
+
+# -------------------------------------------------
+# INFO EMBED (Main Purchase Button)
+# -------------------------------------------------
+async def send_info_embed(force_new: bool = False):
+    channel = bot.get_channel(INFO_CHANNEL_ID)
+    if not channel:
+        print(f"ERROR: INFO_CHANNEL_ID ({INFO_CHANNEL_ID}) not found.")
+        return
+
+    # Simplified embed to match the "old" version
+    embed = discord.Embed(
+        title="Robux Town™",
+        description=(
+            "**Welcome to Robux Town!**\n"
+            "Your one-stop shop for affordable Robux!\n\n"
+            "**How to Buy**\n"
+            "Click the 'Purchase Robux' button below to start.\n"
+            "Follow the guided steps in your private thread!\n\n"
+            "**Safety Tips**\n"
+            "Always double-check addresses and amounts."
+        ),
+        color=0x00A3FF
+    )
+    embed.set_thumbnail(url="https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png")
+
+    if force_new:
+        # If forcing new, delete old messages from the bot
+        try:
+            async for msg in channel.history(limit=10):
+                if msg.author == bot.user:
+                    await msg.delete()
+        except discord.Forbidden:
+            print("Warning: Missing permissions to delete old messages in info channel.")
+        except Exception as e:
+            print(f"Error clearing old info embeds: {e}")
+    else:
+        # Check if a message with the button already exists
+        try:
+            async for msg in channel.history(limit=10):
+                if msg.author == bot.user and msg.components:
+                    print("Info embed with button already exists. Skipping.")
+                    return
+        except Exception as e:
+            print(f"Error checking for existing info embed: {e}")
+
+    view = PersistentPurchaseButton()
+    await channel.send(embed=embed, view=view)
+
+# -------------------------------------------------
+# ON READY
 # -------------------------------------------------
 @bot.event
 async def on_ready():
@@ -541,9 +717,11 @@ async def on_ready():
     # Add the persistent view so the "Purchase Robux" button works after restarts
     bot.add_view(PersistentPurchaseButton())
     
-    # You mentioned you will add embeds yourself, 
-    # so we just print a reminder to post the main button.
-    print("Bot is ready. Please ensure the main purchase embed is posted in the INFO_CHANNEL.")
+    # Post the main purchase button embed
+    # This will only post if it doesn't find one already
+    await send_info_embed(force_new=False) 
+    print("Core services (Purchase Flow, Discounts) are active.")
+
 
 # -------------------------------------------------
 # RUN
