@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Robux Town™ – CORE LOGIC (AUTOMATIC ORDER + ADMIN DISCOUNT PANEL)
+# Robux Town™ – FINAL STABLE VERSION (ALL FEATURES + AESTHETICS)
 import os
 import asyncio
 import json
@@ -14,6 +14,10 @@ from discord.ext import commands, tasks
 # --- Rewarble Links (Needed for payment invoices) ---
 ENEBA_REWARBLE_LINK = "https://www.eneba.com/rewarble-rewarble-visa-10-usd-voucher-global"
 G2A_REWARBLE_LINK = "https://www.g2a.com/rewarble-visa-gift-card-10-usd-by-rewarble-key-global-i10000502992001?suid=960beb55-4797-46d5-b14c-94995fd68f31"
+
+# --- Banner (For Main Embed) ---
+EMBED_BANNER = "https://i.ibb.co/FbRfdH7D/Screenshot-2025-11-10-at-6-58-42-PM.png"
+EMBED_THUMBNAIL = "https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png"
 
 # -------------------------------------------------
 # CONFIG
@@ -33,7 +37,7 @@ active_flows = {} # Global dictionary for tracking user flows
 # Channels (PLACEHOLDER IDs - REPLACE WITH YOUR REAL IDs)
 INFO_CHANNEL_ID           = 1435516058105675818 # Where the 'Purchase Robux' button will live
 LOG_CHANNEL_ID            = 1435516058286035020 # Staff payment submission log
-STAFF_ROLE_ID             = 1435516057526734991 # For the +admin command
+STAFF_ROLE_ID             = 1435516057526734991 # For +admin and discount-by-message
 STAFF_DM_IDS              = [1422665161466187976,1269145029943758899] # Staff to notify on payment
 
 
@@ -161,6 +165,60 @@ class DiscountModal(discord.ui.Modal):
         save_config(config)
         await interaction.response.send_message(
             f"{EMOJI_VERIFIED} Discount code **{code}** set: {amount:,} R$ for **${price:.2f} USD**.",
+            ephemeral=True
+        )
+
+class DeleteDiscountView(discord.ui.Select):
+    def __init__(self, discounts):
+        options = [
+            discord.SelectOption(label=f"{code} ({details['robux']:,} R$ for ${details['price']:.2f})", value=code) 
+            for code, details in discounts.items()
+        ]
+        if not options:
+            options = [discord.SelectOption(label="No discounts found to delete.", value="none")]
+            
+        super().__init__(placeholder="Select code to DELETE permanently", options=options, min_values=1, max_values=1)
+        
+    async def callback(self, interaction: discord.Interaction):
+        code_to_delete = self.values[0]
+        if code_to_delete == "none":
+            await interaction.response.send_message("No action taken.", ephemeral=True)
+            return
+            
+        if code_to_delete in config['deals']:
+            del config['deals'][code_to_delete]
+            save_config(config)
+            await interaction.response.send_message(f"🗑️ Discount code **{code_to_delete}** has been successfully deleted.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"{EMOJI_WARNING} Code not found.", ephemeral=True)
+
+class DiscountListModal(discord.ui.Modal):
+    # This modal is just a way to *trigger* the Select menu, since modals are better for user flow.
+    def __init__(self):
+        super().__init__(title="Active Discounts", timeout=None)
+        active_deals = config.get("deals", {})
+        
+        default_text = "\n".join([f"  - {code}: {details['robux']:,} R$ for ${details['price']:.2f}" for code, details in active_deals.items()])
+        if not default_text:
+            default_text = "No Active Discounts Found."
+
+        self.add_item(discord.ui.TextInput(
+            label=f"Listing {len(active_deals)} Active Discounts:",
+            default=default_text,
+            style=discord.TextStyle.paragraph, 
+            required=False
+        ))
+        self.active_deals = active_deals
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # When user clicks "Submit" (which is like "OK"), show them the delete dropdown
+        if not self.active_deals:
+            await interaction.response.send_message("No discounts to delete.", ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            "Select the code you wish to delete permanently:",
+            view=discord.ui.View().add_item(DeleteDiscountView(self.active_deals)),
             ephemeral=True
         )
 
@@ -302,7 +360,7 @@ class PurchaseFlow(discord.ui.View):
         if step == 1:
             await send_disclaimer_embed(self.thread)
             embed = discord.Embed(title="Would you like to start buying robux? (1/6)", color=color)
-            embed.description = "Please click \"Yes\" to begin."
+            embed.description = "\n\nPlease click \"Yes\" to begin."
             view = discord.ui.View(timeout=None)
             view.add_item(discord.ui.Button(label="Yes", style=discord.ButtonStyle.green, custom_id="flow_yes_1"))
             view.add_item(discord.ui.Button(label="No", style=discord.ButtonStyle.red, custom_id="flow_no_1"))
@@ -310,22 +368,22 @@ class PurchaseFlow(discord.ui.View):
             
         elif step == 2:
             embed = discord.Embed(title="How much robux would you like to buy? (2/6)", color=color)
-            embed.description = "Please specify the amount of Robux you would like to purchase:\n**The minimum order amount is 10,000 Robux**"
+            embed.description = "\n\nPlease specify the amount of Robux you would like to purchase:\n\n**The minimum order amount is 10,000 Robux**"
             await self.thread.send(embed=embed)
             
         elif step == 3:
             embed = discord.Embed(title="Do you have a discount code? (3/6)", color=color)
-            embed.description = "Enter your coupon code below, or type **'SKIP'** to continue to the standard pricing."
+            embed.description = "\n\nEnter your coupon code below, or type **'SKIP'** to continue to the standard pricing."
             await self.thread.send(embed=embed)
             
         elif step == 4:
             rate_per_1k = get_price(1000)
-            discount_info = f"**COUPON APPLIED:** {self.discount_code}\n" if self.discount_code else ""
+            discount_info = f"**COUPON APPLIED:** {self.discount_code}\n\n" if self.discount_code else ""
             embed = discord.Embed(title="Would you like to purchase this amount of Robux? (4/6)", color=color)
             embed.description = (
-                f"Are you sure you want to purchase **{self.robux:,} {EMOJI_ROBUX}**?\n"
+                f"\n\nAre you sure you want to purchase **{self.robux:,} {EMOJI_ROBUX}**?\n\n"
                 f"{discount_info}"
-                f"Standard Rate: **${rate_per_1k:.2f} per 1,000 {EMOJI_ROBUX}**\n"
+                f"Standard Rate: **${rate_per_1k:.2f} per 1,000 {EMOJI_ROBUX}**\n\n"
                 f"Total Price in USD: **${self.price:.2f}**"
             )
             view = discord.ui.View(timeout=None)
@@ -335,7 +393,7 @@ class PurchaseFlow(discord.ui.View):
             
         elif step == 5:
             embed = discord.Embed(title="Please select your preferred payment method (5/6)", color=color)
-            embed.description = "Choose your payment method below:"
+            embed.description = "\n\nChoose your payment method below:"
             select = discord.ui.Select(
                 placeholder="Select your payment method",
                 custom_id="payment_select",
@@ -358,7 +416,7 @@ class PurchaseFlow(discord.ui.View):
         await interaction.response.defer()
         if self.method == "crypto":
             embed = discord.Embed(title="Select Cryptocurrency", color=0x00A3FF)
-            embed.description = "Which coin will you be sending?"
+            embed.description = "\n\nWhich coin will you be sending?"
             select = discord.ui.Select(
                 placeholder="Select your crypto",
                 custom_id="crypto_select",
@@ -396,7 +454,7 @@ class PurchaseFlow(discord.ui.View):
         
         embed = discord.Embed(title=f"{self.crypto.upper()} Payment Invoice (6/6)", color=0x00A3FF)
         embed.description = (
-            f"This transaction is **${price_usd:.2f} USD**.\n"
+            f"This transaction is **${price_usd:.2f} USD**.\n\n"
             f"Please send the **exact** amount of `{amount_coin:.8f}` {self.crypto.upper()} to the address below.\n\n"
             f"**Invoice Expires:** <t:{expiry_timestamp}:R> (<t:{expiry_timestamp}:T>)"
         )
@@ -608,7 +666,9 @@ def is_staff():
             return False
         if STAFF_ROLE_ID:
             role = ctx.guild.get_role(STAFF_ROLE_ID)
-            return role in ctx.author.roles
+            if role:
+                return role in ctx.author.roles
+        # Fallback to admin perms if role ID is not set or invalid
         return ctx.author.guild_permissions.administrator
     return commands.check(predicate)
 
@@ -631,6 +691,9 @@ async def handle_admin_panel_interaction(interaction: discord.Interaction, cid: 
         await interaction.response.send_modal(QRModal())
     elif cid == "admin_set_discount":
         await interaction.response.send_modal(DiscountModal())
+    elif cid == "admin_list_discounts":
+        # This now opens the modal that *then* shows the select menu
+        await interaction.response.send_modal(DiscountListModal())
     elif cid == "admin_reset_embed":
         await interaction.response.defer(ephemeral=True)
         await send_info_embed(force_new=True) # This is the main purchase button embed
@@ -655,6 +718,10 @@ class AdminPanel(discord.ui.View):
     async def set_discount_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_set_discount")
 
+    @discord.ui.button(label="List/Delete Discounts", style=discord.ButtonStyle.secondary, custom_id="admin_list_discounts", emoji="🗑️")
+    async def list_discounts_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_admin_panel_interaction(interaction, "admin_list_discounts")
+
     @discord.ui.button(label="Reset Purchase Embed", style=discord.ButtonStyle.red, custom_id="admin_reset_embed", emoji="🔄")
     async def reset_embed_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await handle_admin_panel_interaction(interaction, "admin_reset_embed")
@@ -668,21 +735,39 @@ async def send_info_embed(force_new: bool = False):
         print(f"ERROR: INFO_CHANNEL_ID ({INFO_CHANNEL_ID}) not found.")
         return
 
-    # Simplified embed to match the "old" version
+    # NEW: Re-styled embed with more info
     embed = discord.Embed(
-        title="Robux Town™",
+        title="Welcome to Robux Town™",
         description=(
-            "**Welcome to Robux Town!**\n"
-            "Your one-stop shop for affordable Robux!\n\n"
-            "**How to Buy**\n"
-            "Click the 'Purchase Robux' button below to start.\n"
-            "Follow the guided steps in your private thread!\n\n"
-            "**Safety Tips**\n"
-            "Always double-check addresses and amounts."
+            "This bot is a Discord bot designed to streamline the process of "
+            "purchasing and distributing Robux, the virtual currency used in Roblox."
         ),
         color=0x00A3FF
     )
-    embed.set_thumbnail(url="https://i.ibb.co/v4rqV5Pj/9c5fd434-f30f-4e24-8212-ea40fa098678.png")
+    embed.set_thumbnail(url=EMBED_THUMBNAIL)
+    
+    embed.add_field(
+        name="🚀 Instant Robux Delivery",
+        value="Receive your Robux within moments of purchase.",
+        inline=False
+    )
+    embed.add_field(
+        name="🤖 Fully Automated Payments",
+        value="Experience seamless transactions with our fully automated payment system.",
+        inline=False
+    )
+    embed.add_field(
+        name="🔒 Transaction Security",
+        value="Our bot guarantees a safe and secure payment process every time.",
+        inline=False
+    )
+    embed.add_field(
+        name="💳 Diverse Payment Options",
+        value="Enjoy a variety of automated payment methods including Cryptocurrency, PayPal, and more!",
+        inline=False
+    )
+    
+    embed.set_image(url=EMBED_BANNER) # Banner at the bottom
 
     if force_new:
         # If forcing new, delete old messages from the bot
